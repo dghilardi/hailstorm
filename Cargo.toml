@@ -2,7 +2,11 @@
 name = "hailstorm"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Davide Ghilardi <dghila@d71.dev>"]
+description = "Load testing framework"
+keywords = [ "loadtesting", "framework", "tool", "load", "performance" ]
+repository = "https://github.com/dghilardi/hailstorm"
+license = "MIT"
+readme = "README.md"
 
 [dependencies]
