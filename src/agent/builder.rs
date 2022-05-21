@@ -4,7 +4,7 @@ use actix::Actor;
 use futures::future::try_join_all;
 use tonic::transport::Server;
 use crate::agent::actor::AgentCoreActor;
-use crate::communication::client_actor::AgentClientActor;
+use crate::communication::upstream_agent_actor::UpstreamAgentActor;
 use crate::communication::grpc;
 use crate::communication::notifier_actor::UpdatesNotifierActor;
 use crate::communication::server::HailstormGrpcServer;
@@ -19,9 +19,12 @@ pub struct AgentBuilder {
 impl AgentBuilder {
     pub async fn launch(self) {
         let updater_addr = UpdatesNotifierActor::create(|_| UpdatesNotifierActor::new());
+        let server_actor = HailstormServerActor::create(|_| HailstormServerActor::new(updater_addr.clone()));
+
         let core_addr = AgentCoreActor::create(|_| AgentCoreActor::new(
             self.agent_id,
             updater_addr.clone(),
+            server_actor.clone(),
         ));
 
         if self.upstream.is_empty() {
@@ -30,7 +33,7 @@ impl AgentBuilder {
 
         let clients_fut = self.upstream
             .into_iter()
-            .map(|(_k, url)| AgentClientActor::new(url, core_addr.clone()));
+            .map(|(_k, url)| UpstreamAgentActor::new(url, core_addr.clone()));
 
         let clients = try_join_all(clients_fut).await
             .expect("Error building clients")
@@ -38,7 +41,6 @@ impl AgentBuilder {
             .map(Actor::start)
             .collect::<Vec<_>>();
 
-        let server_actor = HailstormServerActor::create(|_| HailstormServerActor::new(updater_addr.clone()));
         let hailstorm_server = HailstormGrpcServer::new(server_actor);
         Server::builder()
             .add_service(grpc::hailstorm_service_server::HailstormServiceServer::new(hailstorm_server))
