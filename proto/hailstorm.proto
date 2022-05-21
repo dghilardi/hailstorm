@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package hailstorm;
+
+import "google/protobuf/timestamp.proto";
+
+message AgentMessage {
+  repeated AgentUpdate updates = 1;
+}
+
+message AgentUpdate {
+  uint64 agent_id = 1;
+  AgentStats stats = 2;
+  uint64 update_id = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  string name = 16;
+  AgentState state = 17;
+  string simulation_id = 18;
+}
+
+message AgentStats {
+  repeated ClientGroupStates states = 1;
+}
+
+message ClientGroupStates {
+  uint32 state_id = 1;
+  uint32 count = 2;
+}
+
+enum AgentState {
+  IDLE = 0;
+  READY = 1;
+  RUNNING = 2;
+  STOPPING = 3;
+}
+
+message ControllerCommand {
+  oneof command {
+    LoadSimCommand load = 1;
+    LaunchCommand launch = 2;
+  }
+}
+
+message LaunchCommand {
+  google.protobuf.Timestamp start_ts = 1;
+}
+
+message LoadSimCommand {
+  repeated ClientDistribution clients_evolution = 1;
+  string script = 2;
+}
+
+message ClientDistribution {
+  string model = 1;
+  string shape = 2;
+}
+
+service HailstormService {
+  rpc Join(stream AgentMessage) returns (stream ControllerCommand) {}
+}
