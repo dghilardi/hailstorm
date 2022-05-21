@@ -4,6 +4,7 @@ use actix::{Actor, AsyncContext, Context, Handler};
 use tokio::sync::mpsc::Sender;
 use crate::communication::grpc::{AgentMessage, AgentUpdate};
 
+#[derive(Default)]
 pub struct UpdatesNotifierActor {
     frames: HashMap<u64, AgentUpdate>,
     connected_clients: Vec<Sender<AgentMessage>>,
@@ -19,10 +20,7 @@ impl Actor for UpdatesNotifierActor {
 
 impl UpdatesNotifierActor {
     pub fn new() -> Self {
-        Self {
-            frames: Default::default(),
-            connected_clients: vec![],
-        }
+        Default::default()
     }
 
     fn send_data(&mut self) {

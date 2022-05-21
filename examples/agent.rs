@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use config::{Config, ConfigError, Environment, File};
+use rand::{Rng, RngCore, thread_rng};
 use serde::Deserialize;
 use hailstorm::agent::builder::AgentBuilder;
 
@@ -33,7 +34,11 @@ async fn main() {
     log::info!("Starting Hailstorm Agent...");
 
     AgentBuilder {
+        agent_id: config.agent_id
+            .unwrap_or_else(|| thread_rng().next_u64()),
         address: config.address
             .to_socket_addrs().unwrap().next().unwrap(),
+        upstream: config.upstream
+            .unwrap_or_else(HashMap::new)
     }.launch().await;
 }
