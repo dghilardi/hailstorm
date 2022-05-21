@@ -24,7 +24,7 @@ pub fn compose_config<'de, CFG: Deserialize<'de>>(external_path: &str) -> Result
 }
 
 #[actix::main(flavor = "current_thread")]
-fn main() {
+async fn main() {
     env_logger::init();
     let config: HailstormAgentConfig = compose_config("config/hailstorm-agent")
         .expect("Error loading config");
