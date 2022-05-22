@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::net::ToSocketAddrs;
 use std::ops::Add;
@@ -8,6 +8,7 @@ use config::{Config, ConfigError, Environment, File};
 use futures::{Stream, StreamExt, FutureExt, TryStreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 use tonic::transport::Server;
@@ -27,32 +28,48 @@ impl HailstormService for EchoHailstormServer {
     type JoinStream = ResponseStream<ControllerCommand>;
 
     async fn join(&self, request: Request<Streaming<AgentMessage>>) -> Result<Response<Self::JoinStream>, Status> {
-        tokio::spawn(handle_messages(request.into_inner()));
-        let cmd_stream = futures::stream::iter(vec![
-            ControllerCommand {
-                command: Some(self.load_command.clone())
-            },
-            ControllerCommand {
-                command: Some(Command::Launch(LaunchCommand {
-                    start_ts: Some(self.start_ts.into())
-                }))
-            },
-        ]).map(Ok);
-
-        let delayed_stream = async move {
-            actix::clock::sleep(Duration::from_secs(5)).await;
-            cmd_stream
-        }
-            .into_stream()
-            .flatten();
-
-        Ok(Response::new(Box::pin(delayed_stream)))
+        let (tx, rx) = mpsc::channel(128);
+        tokio::spawn(initialize_agents(self.start_ts, self.load_command.clone(), tx.clone()));
+        tokio::spawn(handle_messages(request.into_inner(), tx.clone()));
+        Ok(Response::new(Box::pin(ReceiverStream::new(rx).map(Ok))))
     }
 }
 
-async fn handle_messages(mut msg_stream: Streaming<AgentMessage>) {
-    while let Some(msg) = msg_stream.next().await {
-        log::info!("Received msg: {msg:?}");
+async fn initialize_agents(
+    start_ts: SystemTime,
+    load_command: Command,
+    sender: Sender<ControllerCommand>
+) {
+    actix::clock::sleep(Duration::from_secs(5)).await;
+    sender.send(ControllerCommand { command: Some(load_command.clone()) }).await.expect("Error sending load command");
+    sender.send(ControllerCommand {
+        command: Some(Command::Launch(LaunchCommand { start_ts: Some(start_ts.into()) }))
+    }).await.expect("Error sending launch command");
+}
+
+async fn handle_messages(mut msg_stream: Streaming<AgentMessage>, sender: Sender<ControllerCommand>) {
+    let mut registered_agents = HashSet::<u64>::new();
+    while let Some(msg_res) = msg_stream.next().await {
+        match msg_res {
+            Ok(msg) => {
+                log::info!("Received msg: {msg:?}");
+                let new_agents = msg.updates.iter()
+                    .map(|upd| upd.agent_id)
+                    .filter(|agent_id| !registered_agents.contains(&agent_id))
+                    .collect::<HashSet<_>>();
+
+                if new_agents.len() > 0 {
+                    for agent_id in new_agents {
+                        registered_agents.insert(agent_id);
+                    }
+                    sender.send(ControllerCommand {
+                        command: Some(Command::UpdateAgentsCount(registered_agents.len() as u32))
+                    }).await.expect("Error sending UpdateAgentsCount")
+                }
+            }
+            Err(err) => {
+                log::error!("Error receiving message {err}");}
+        }
     }
 }
 

@@ -129,7 +129,8 @@ impl From<&Command> for Option<SimulationCommand> {
                 .and_then(|ts| ts.try_into()
                     .map_err(|err| log::error!("Error converting timestamp to systemtime"))
                     .ok()
-                ).map(|start_ts| SimulationCommand::LaunchSimulation { start_ts })
+                ).map(|start_ts| SimulationCommand::LaunchSimulation { start_ts }),
+            Command::UpdateAgentsCount(count) => Some(SimulationCommand::UpdateAgentsCount { count: *count })
         }
     }
 }
