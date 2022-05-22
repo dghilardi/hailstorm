@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
-use actix::{Actor, AsyncContext, Context, Handler, Message};
+use actix::{Actor, AsyncContext, Context, Handler, Message, MessageResponse};
 use crate::simulation::error::SimulationError;
 
 pub struct SimulationActor {
     agent_id: u64,
     start_ts: Option<SystemTime>,
+    script: Option<String>,
     agents_count: u32,
     model_shapes: HashMap<String, Box<dyn Fn(f64) -> f64>>,
 }
@@ -23,6 +24,7 @@ impl SimulationActor {
         Self {
             agent_id,
             start_ts: None,
+            script: None,
             agents_count: 1,
             model_shapes: Default::default()
         }
@@ -49,7 +51,7 @@ impl SimulationActor {
         if let Some(elapsed) = maybe_elapsed {
             for (model, shape) in self.model_shapes.iter() {
                 let shape_val = shape(elapsed);
-                let shift = (self.agent_id as f64) / f64::MAX;
+                let shift = (self.agent_id % 1000) as f64 / 1000f64;
                 let count = (shape_val + shift).floor() as u64;
                 log::info!("{model} -> {count}");
             }
@@ -81,10 +83,56 @@ impl Handler<SimulationCommand> for SimulationActor {
                     .collect::<Result<Vec<_>, _>>()
                     .err()
                     .map(|err| log::error!("Error registering simulation clients - {err}"));
+
+                self.script = Some(script);
             }
             SimulationCommand::LaunchSimulation { start_ts } => {
                 self.start_ts = Some(start_ts);
             }
+        }
+    }
+}
+
+pub enum SimulationState {
+    Idle,
+    Ready,
+    Waiting,
+    Running,
+    Stopping,
+}
+
+pub struct ClientStats {
+
+}
+
+#[derive(MessageResponse)]
+pub struct SimulationStats {
+    pub stats: Vec<ClientStats>,
+    pub timestamp: SystemTime,
+    pub state: SimulationState,
+    pub simulation_id: String,
+}
+
+#[derive(Message)]
+#[rtype(result = "SimulationStats")]
+pub struct FetchSimulationStats;
+
+impl Handler<FetchSimulationStats> for SimulationActor {
+    type Result = SimulationStats;
+
+    fn handle(&mut self, msg: FetchSimulationStats, ctx: &mut Self::Context) -> Self::Result {
+        let state = match (self.start_ts.as_ref(), self.script.as_ref()) {
+            (_, None) => SimulationState::Idle,
+            (None, Some(_)) => SimulationState::Ready,
+            (Some(ts), Some(_)) if *ts < SystemTime::now() => SimulationState::Running,
+            (Some(_), Some(_)) => SimulationState::Waiting,
+        };
+
+        SimulationStats {
+            stats: vec![],
+            timestamp: SystemTime::now(),
+            state,
+            simulation_id: "".to_string()
         }
     }
 }

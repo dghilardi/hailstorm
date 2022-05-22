@@ -10,7 +10,7 @@ message AgentMessage {
 
 message AgentUpdate {
   uint64 agent_id = 1;
-  AgentStats stats = 2;
+  repeated AgentStats stats = 2;
   uint64 update_id = 3;
   google.protobuf.Timestamp timestamp = 4;
   string name = 16;
@@ -20,6 +20,7 @@ message AgentUpdate {
 
 message AgentStats {
   repeated ClientGroupStates states = 1;
+  string model = 2;
 }
 
 message ClientGroupStates {
@@ -30,8 +31,9 @@ message ClientGroupStates {
 enum AgentState {
   IDLE = 0;
   READY = 1;
-  RUNNING = 2;
-  STOPPING = 3;
+  WAITING = 2;
+  RUNNING = 3;
+  STOPPING = 4;
 }
 
 message ControllerCommand {

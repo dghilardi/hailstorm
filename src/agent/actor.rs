@@ -1,7 +1,7 @@
 use std::future::ready;
 use std::time::Duration;
 
-use actix::{Actor, Addr, AsyncContext, Context, Handler, StreamHandler};
+use actix::{Actor, Addr, AsyncContext, Context, Handler, MailboxError, StreamHandler};
 use futures::{FutureExt, StreamExt};
 use rand::{Rng, thread_rng};
 use tokio::sync::mpsc::Sender;
@@ -11,8 +11,9 @@ use crate::communication::grpc::{AgentMessage, AgentUpdate, ControllerCommand};
 use crate::communication::message::ControllerCommandMessage;
 use crate::communication::notifier_actor::{AgentUpdateMessage, RegisterAgentUpdateSender, UpdatesNotifierActor};
 use crate::communication::server_actor::HailstormServerActor;
+use crate::grpc;
 use crate::grpc::controller_command::Command;
-use crate::simulation::simulation_actor::{SimulationActor, SimulationCommand};
+use crate::simulation::simulation_actor::{FetchSimulationStats, SimulationActor, SimulationCommand, SimulationState};
 
 pub struct AgentCoreActor {
     agent_id: u64,
@@ -38,16 +39,37 @@ impl AgentCoreActor {
 
 
     fn send_data(&mut self) {
-        self.notifier_addr.try_send(AgentUpdateMessage(AgentUpdate {
-            agent_id: self.agent_id,
-            stats: None,
-            update_id: thread_rng().gen(),
-            timestamp: None,
-            name: "".to_string(),
-            state: 0,
-            simulation_id: "".to_string(),
-        })).unwrap_or_else(|err| {
-            log::error!("Error sending agent stats to notifier actor {err}");
+        let agent_id = self.agent_id;
+        let notifier_addr = self.notifier_addr.clone();
+        let simulation_addr = self.simulation_addr.clone();
+        actix::spawn(async move {
+            let stats = simulation_addr.send(FetchSimulationStats).await
+                .map_err(|err| {
+                    log::error!("Error fetching simulation stats - {err}");
+                    err
+                })?;
+
+            let state = match stats.state {
+                SimulationState::Idle => grpc::AgentState::Idle,
+                SimulationState::Ready => grpc::AgentState::Ready,
+                SimulationState::Waiting => grpc::AgentState::Waiting,
+                SimulationState::Running => grpc::AgentState::Running,
+                SimulationState::Stopping => grpc::AgentState::Stopping,
+            };
+
+            notifier_addr.try_send(AgentUpdateMessage(AgentUpdate {
+                agent_id,
+                stats: vec![],
+                update_id: thread_rng().gen(),
+                timestamp: Some(stats.timestamp.into()),
+                name: "".to_string(),
+                state: state as i32,
+                simulation_id: "".to_string(),
+            })).unwrap_or_else(|err| {
+                log::error!("Error sending agent stats to notifier actor {err}");
+            });
+
+            Result::<_, MailboxError>::Ok(())
         });
     }
 }
