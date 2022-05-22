@@ -52,7 +52,7 @@ impl SimulationActor {
             for (model, shape) in self.model_shapes.iter() {
                 let shape_val = shape(elapsed);
                 let shift = (self.agent_id % 1000) as f64 / 1000f64;
-                let count = (shape_val + shift).floor() as u64;
+                let count = ((shape_val / self.agents_count as f64) + shift).floor() as u64;
                 log::info!("{model} -> {count}");
             }
         }
@@ -68,6 +68,9 @@ pub enum SimulationCommand {
     },
     LaunchSimulation {
         start_ts: SystemTime,
+    },
+    UpdateAgentsCount {
+        count: u32
     },
 }
 
@@ -88,6 +91,9 @@ impl Handler<SimulationCommand> for SimulationActor {
             }
             SimulationCommand::LaunchSimulation { start_ts } => {
                 self.start_ts = Some(start_ts);
+            }
+            SimulationCommand::UpdateAgentsCount { count } => {
+                self.agents_count = count;
             }
         }
     }

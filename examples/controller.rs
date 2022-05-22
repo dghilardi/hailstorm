@@ -5,7 +5,7 @@ use std::ops::Add;
 use std::pin::Pin;
 use std::time::{Duration, SystemTime};
 use config::{Config, ConfigError, Environment, File};
-use futures::{Stream, StreamExt};
+use futures::{Stream, StreamExt, FutureExt, TryStreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -38,7 +38,15 @@ impl HailstormService for EchoHailstormServer {
                 }))
             },
         ]).map(Ok);
-        Ok(Response::new(Box::pin(cmd_stream)))
+
+        let delayed_stream = async move {
+            actix::clock::sleep(Duration::from_secs(5)).await;
+            cmd_stream
+        }
+            .into_stream()
+            .flatten();
+
+        Ok(Response::new(Box::pin(delayed_stream)))
     }
 }
 
@@ -76,7 +84,7 @@ async fn main() {
 
     log::info!("Starting controller ...");
     let hailstorm_server = EchoHailstormServer {
-        start_ts: SystemTime::now().add(Duration::from_secs(5)),
+        start_ts: SystemTime::now().add(Duration::from_secs(10)),
         load_command: Command::Load(LoadSimCommand {
             clients_evolution: config.clients_distribution.into_iter()
                 .map(|(model, shape)| ClientDistribution { model, shape })
