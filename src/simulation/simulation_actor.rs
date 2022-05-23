@@ -1,7 +1,14 @@
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
-use actix::{Actor, AsyncContext, Context, Handler, Message, MessageResponse};
+use actix::{Actor, Addr, AsyncContext, Context, Handler, Message, MessageResponse};
+use rand::{RngCore, thread_rng};
 use crate::simulation::error::SimulationError;
+use crate::simulation::user_actor::{StopUser, UserActor, UserState};
+
+struct SimulationUser {
+    state: UserState,
+    addr: Addr<UserActor>
+}
 
 pub struct SimulationActor {
     agent_id: u64,
@@ -9,13 +16,14 @@ pub struct SimulationActor {
     script: Option<String>,
     agents_count: u32,
     model_shapes: HashMap<String, Box<dyn Fn(f64) -> f64>>,
+    sim_users: HashMap<String, HashMap<u64, SimulationUser>>,
 }
 
 impl Actor for SimulationActor {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        ctx.run_interval(Duration::from_millis(1000), |act, _ctx| act.tick());
+        ctx.run_interval(Duration::from_millis(1000), |act, ctx| act.tick(ctx));
     }
 }
 
@@ -26,7 +34,8 @@ impl SimulationActor {
             start_ts: None,
             script: None,
             agents_count: 1,
-            model_shapes: Default::default()
+            model_shapes: Default::default(),
+            sim_users: Default::default(),
         }
     }
 
@@ -39,7 +48,7 @@ impl SimulationActor {
         Ok(())
     }
 
-    fn tick(&mut self) {
+    fn tick(&mut self, ctx: &mut Context<Self>) {
         let maybe_elapsed = self.start_ts
             .as_ref()
             .filter(|start_ts| **start_ts < SystemTime::now())
@@ -52,8 +61,37 @@ impl SimulationActor {
             for (model, shape) in self.model_shapes.iter() {
                 let shape_val = shape(elapsed);
                 let shift = (self.agent_id % 1000) as f64 / 1000f64;
-                let count = ((shape_val / self.agents_count as f64) + shift).floor() as u64;
-                log::info!("{model} -> {count}");
+                let count = ((shape_val / self.agents_count as f64) + shift).floor() as usize;
+
+                let users = self.sim_users.entry(model.clone())
+                    .or_insert_with(Default::default);
+
+                let running_count = users
+                    .iter()
+                    .filter(|(_id, u)| u.state != UserState::Stopping)
+                    .count();
+
+                users.retain(|_id, u| u.addr.connected());
+
+                if running_count > count {
+                    let to_be_stopped = users.iter_mut()
+                        .filter(|(_id, u)| u.state != UserState::Stopping)
+                        .take(running_count - count)
+                        .for_each(|(_id, u)| {
+                            u.state = UserState::Stopping;
+                            u.addr.try_send(StopUser)
+                                .unwrap_or_else(|err| log::error!("Error sending stop request"));
+                        });
+                } else if count > running_count {
+                    let mut rng = thread_rng();
+                    for _idx in 0..(count-running_count) {
+                        let usr_id = rng.next_u64();
+                        users.insert(usr_id, SimulationUser {
+                            state: UserState::Running,
+                            addr: UserActor::create(|_| UserActor::new(usr_id, ctx.address()))
+                        });
+                    }
+                }
             }
         }
     }
@@ -108,7 +146,8 @@ pub enum SimulationState {
 }
 
 pub struct ClientStats {
-
+    pub model: String,
+    pub count_by_state: HashMap<UserState, usize>,
 }
 
 #[derive(MessageResponse)]
@@ -134,11 +173,30 @@ impl Handler<FetchSimulationStats> for SimulationActor {
             (Some(_), Some(_)) => SimulationState::Waiting,
         };
 
+        let stats = self.sim_users.iter()
+            .map(|(model, usr)| ClientStats {
+                model: model.clone(),
+                count_by_state: count_by_state(usr)
+            })
+            .collect();
+
         SimulationStats {
-            stats: vec![],
+            stats,
             timestamp: SystemTime::now(),
             state,
             simulation_id: "".to_string()
         }
     }
+}
+
+fn count_by_state(usr_map: &HashMap<u64, SimulationUser>) -> HashMap<UserState, usize> {
+    let mut group_by_state = HashMap::new();
+
+    for (_id, usr) in usr_map {
+        let entry = group_by_state.entry(usr.state)
+            .or_insert(0);
+        *entry += 1;
+    }
+
+    group_by_state
 }

@@ -59,7 +59,9 @@ impl AgentCoreActor {
 
             notifier_addr.try_send(AgentUpdateMessage(AgentUpdate {
                 agent_id,
-                stats: vec![],
+                stats: stats.stats.into_iter()
+                    .map(Into::into)
+                    .collect(),
                 update_id: thread_rng().gen(),
                 timestamp: Some(stats.timestamp.into()),
                 name: "".to_string(),
