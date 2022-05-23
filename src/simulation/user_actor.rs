@@ -1,10 +1,11 @@
 use actix::{Actor, ActorContext, Addr, Context, Handler, Message};
-use crate::simulation::simulation_actor::SimulationActor;
+use crate::simulation::simulation_actor::{SimulationActor, UserStateChange};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub enum UserState {
     Running,
     Stopping,
+    Stopped,
     Custom(u32),
 }
 
@@ -13,6 +14,7 @@ impl From<UserState> for u32 {
         match state {
             UserState::Running => 0,
             UserState::Stopping => 1,
+            UserState::Stopped => 2,
             UserState::Custom(cst) => 100 + cst,
         }
     }
@@ -44,6 +46,10 @@ impl Actor for UserActor {
 
     fn stopped(&mut self, ctx: &mut Self::Context) {
         log::debug!("User actor stopped");
+        self.simulation_addr.try_send(UserStateChange {
+            user_id: self.user_id,
+            state: UserState::Stopped,
+        }).unwrap_or_else(|e| log::error!("Error sending stopped user state"));
     }
 }
 

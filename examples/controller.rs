@@ -1,18 +1,19 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::net::ToSocketAddrs;
-use std::ops::Add;
+use std::ops::{Add, Sub};
 use std::pin::Pin;
 use std::time::{Duration, SystemTime};
 use config::{Config, ConfigError, Environment, File};
 use futures::{Stream, StreamExt, FutureExt, TryStreamExt};
+use prost_types::Timestamp;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 use tonic::transport::Server;
-use hailstorm::grpc::{self, AgentMessage, ClientDistribution, ControllerCommand, LaunchCommand, LoadSimCommand};
+use hailstorm::grpc::{self, AgentMessage, AgentUpdate, ClientDistribution, ControllerCommand, LaunchCommand, LoadSimCommand};
 use hailstorm::grpc::controller_command::Command;
 use hailstorm::grpc::hailstorm_service_server::HailstormService;
 
@@ -48,20 +49,39 @@ async fn initialize_agents(
 }
 
 async fn handle_messages(mut msg_stream: Streaming<AgentMessage>, sender: Sender<ControllerCommand>) {
-    let mut registered_agents = HashSet::<u64>::new();
+    let mut registered_agents = HashMap::<u64, AgentUpdate>::new();
     while let Some(msg_res) = msg_stream.next().await {
         match msg_res {
             Ok(msg) => {
-                log::info!("Received msg: {msg:?}");
-                let new_agents = msg.updates.iter()
-                    .map(|upd| upd.agent_id)
-                    .filter(|agent_id| !registered_agents.contains(&agent_id))
-                    .collect::<HashSet<_>>();
+                let prev_agent_count = registered_agents.len();
+                for fragment in msg.updates {
+                    registered_agents.insert(fragment.agent_id, fragment);
+                }
+                registered_agents
+                    .retain(|_idx, update|
+                        update.timestamp.as_ref()
+                            .map(|ts| SystemTime::now().sub(Duration::from_secs(15)) < SystemTime::try_from(ts.clone()).unwrap())
+                            .unwrap_or(false)
+                    );
 
-                if new_agents.len() > 0 {
-                    for agent_id in new_agents {
-                        registered_agents.insert(agent_id);
-                    }
+                let summary: HashMap<String, HashMap<u32, u32>> = registered_agents.iter()
+                    .fold(HashMap::new(), |mut acc, (_, upd)| {
+                        for model_stats in &upd.stats {
+                            let model_acc = acc.entry(model_stats.model.clone())
+                                .or_insert_with(HashMap::new);
+                            for state_stats in &model_stats.states {
+                                let mut acc_state_stats = model_acc.entry(state_stats.state_id)
+                                    .or_insert(0);
+                                *acc_state_stats += state_stats.count;
+                            }
+                        }
+                        acc
+                    });
+                log::debug!("registered agents: {registered_agents:?}");
+                log::debug!("summary: {summary:?}");
+                print_summary(summary);
+
+                if prev_agent_count != registered_agents.len() {
                     sender.send(ControllerCommand {
                         command: Some(Command::UpdateAgentsCount(registered_agents.len() as u32))
                     }).await.expect("Error sending UpdateAgentsCount")
@@ -69,6 +89,15 @@ async fn handle_messages(mut msg_stream: Streaming<AgentMessage>, sender: Sender
             }
             Err(err) => {
                 log::error!("Error receiving message {err}");}
+        }
+    }
+}
+
+fn print_summary(summary: HashMap<String, HashMap<u32, u32>>) {
+    for (model, model_stats) in summary {
+        log::info!("== {model} ==");
+        for (state, count) in model_stats {
+            log::info!(" - [{state}] -> {count}");
         }
     }
 }

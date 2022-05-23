@@ -7,7 +7,7 @@ use crate::simulation::user_actor::{StopUser, UserActor, UserState};
 
 struct SimulationUser {
     state: UserState,
-    addr: Addr<UserActor>
+    addr: Addr<UserActor>,
 }
 
 pub struct SimulationActor {
@@ -44,7 +44,7 @@ impl SimulationActor {
         let shape_fun = expr.bind("t")?;
 
         self.model_shapes.insert(model, Box::new(shape_fun));
-        
+
         Ok(())
     }
 
@@ -84,15 +84,40 @@ impl SimulationActor {
                         });
                 } else if count > running_count {
                     let mut rng = thread_rng();
-                    for _idx in 0..(count-running_count) {
+                    for _idx in 0..(count - running_count) {
                         let usr_id = rng.next_u64();
                         users.insert(usr_id, SimulationUser {
                             state: UserState::Running,
-                            addr: UserActor::create(|_| UserActor::new(usr_id, ctx.address()))
+                            addr: UserActor::create(|_| UserActor::new(usr_id, ctx.address())),
                         });
                     }
                 }
             }
+        }
+    }
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct UserStateChange {
+    pub user_id: u64,
+    pub state: UserState,
+}
+
+impl Handler<UserStateChange> for SimulationActor {
+    type Result = ();
+
+    fn handle(&mut self, msg: UserStateChange, ctx: &mut Self::Context) -> Self::Result {
+        let mut model_entry = self.sim_users.iter_mut()
+            .filter(|(_m, u)| u.contains_key(&msg.user_id))
+            .next();
+        if matches!(msg.state, UserState::Stopped) {
+            model_entry
+                .map(|(_m, u)| u.remove(&msg.user_id));
+        } else {
+            model_entry
+                .and_then(|(_m, u)| u.get_mut(&msg.user_id))
+                .map(|u| u.state = msg.state);
         }
     }
 }
@@ -176,7 +201,7 @@ impl Handler<FetchSimulationStats> for SimulationActor {
         let stats = self.sim_users.iter()
             .map(|(model, usr)| ClientStats {
                 model: model.clone(),
-                count_by_state: count_by_state(usr)
+                count_by_state: count_by_state(usr),
             })
             .collect();
 
@@ -184,7 +209,7 @@ impl Handler<FetchSimulationStats> for SimulationActor {
             stats,
             timestamp: SystemTime::now(),
             state,
-            simulation_id: "".to_string()
+            simulation_id: "".to_string(),
         }
     }
 }
