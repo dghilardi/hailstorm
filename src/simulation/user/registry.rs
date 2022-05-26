@@ -36,7 +36,7 @@ impl UserRegistry {
             .build()?;
 
         let user_types = unit.debug_info()
-            .ok_or_else(|| UserError::NoDebugInfo)?
+            .ok_or(UserError::NoDebugInfo)?
             .functions
             .iter()
             .fold(HashMap::new(), |mut acc, (hash, dbg)| {

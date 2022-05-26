@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use config::{Config, ConfigError, Environment, File};
-use rand::{Rng, RngCore, thread_rng};
+use rand::{RngCore, thread_rng};
 use serde::Deserialize;
 use hailstorm::agent::builder::AgentBuilder;
 
@@ -39,6 +39,6 @@ async fn main() {
         address: config.address
             .to_socket_addrs().unwrap().next().unwrap(),
         upstream: config.upstream
-            .unwrap_or_else(HashMap::new)
+            .unwrap_or_default()
     }.launch().await;
 }

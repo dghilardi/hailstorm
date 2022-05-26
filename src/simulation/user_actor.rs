@@ -40,16 +40,16 @@ impl UserActor {
 impl Actor for UserActor {
     type Context = Context<Self>;
 
-    fn started(&mut self, ctx: &mut Self::Context) {
+    fn started(&mut self, _ctx: &mut Self::Context) {
         log::debug!("User actor started");
     }
 
-    fn stopped(&mut self, ctx: &mut Self::Context) {
+    fn stopped(&mut self, _ctx: &mut Self::Context) {
         log::debug!("User actor stopped");
         self.simulation_addr.try_send(UserStateChange {
             user_id: self.user_id,
             state: UserState::Stopped,
-        }).unwrap_or_else(|e| log::error!("Error sending stopped user state"));
+        }).unwrap_or_else(|e| log::error!("Error sending stopped user state - {e}"));
     }
 }
 
@@ -60,7 +60,7 @@ pub struct StopUser;
 impl Handler<StopUser> for UserActor {
     type Result = ();
 
-    fn handle(&mut self, msg: StopUser, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: StopUser, ctx: &mut Self::Context) -> Self::Result {
         ctx.stop();
     }
 }

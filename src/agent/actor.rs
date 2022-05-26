@@ -2,7 +2,7 @@ use std::future::ready;
 use std::time::Duration;
 
 use actix::{Actor, Addr, AsyncContext, Context, Handler, MailboxError, StreamHandler};
-use futures::{FutureExt, StreamExt};
+use futures::StreamExt;
 use rand::{Rng, thread_rng};
 use tokio::sync::mpsc::Sender;
 use tonic::Streaming;
@@ -129,7 +129,7 @@ impl From<&Command> for Option<SimulationCommand> {
             }),
             Command::Launch(launch) => launch.start_ts.clone()
                 .and_then(|ts| ts.try_into()
-                    .map_err(|err| log::error!("Error converting timestamp to systemtime"))
+                    .map_err(|err| log::error!("Error converting timestamp to systemtime - {err}"))
                     .ok()
                 ).map(|start_ts| SimulationCommand::LaunchSimulation { start_ts }),
             Command::UpdateAgentsCount(count) => Some(SimulationCommand::UpdateAgentsCount { count: *count })
@@ -141,16 +141,15 @@ impl StreamHandler<ConnectedClientMessage> for AgentCoreActor {
     fn handle(&mut self, ConnectedClientMessage { message, .. }: ConnectedClientMessage, _ctx: &mut Self::Context) {
         log::debug!("message: {message:?}");
         let maybe_sim_command: Option<SimulationCommand> = message.command.as_ref()
-            .map(From::from)
-            .flatten();
+            .and_then(From::from);
 
         if let Some(sim_command) = maybe_sim_command {
             self.simulation_addr.try_send(sim_command)
-                .unwrap_or_else(|err| log::error!("Error sending simulation command"));
+                .unwrap_or_else(|err| log::error!("Error sending simulation command - {err}"));
         }
 
         self.server_addr.try_send(ControllerCommandMessage(message))
-            .unwrap_or_else(|err| log::error!("Error sending command to server actor"));
+            .unwrap_or_else(|err| log::error!("Error sending command to server actor - {err}"));
     }
 
     fn started(&mut self, _ctx: &mut Self::Context) {

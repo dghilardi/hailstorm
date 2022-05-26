@@ -1,12 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::net::ToSocketAddrs;
 use std::ops::{Add, Sub};
 use std::pin::Pin;
 use std::time::{Duration, SystemTime};
 use config::{Config, ConfigError, Environment, File};
-use futures::{Stream, StreamExt, FutureExt, TryStreamExt};
-use prost_types::Timestamp;
+use futures::{Stream, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
@@ -31,7 +30,7 @@ impl HailstormService for EchoHailstormServer {
     async fn join(&self, request: Request<Streaming<AgentMessage>>) -> Result<Response<Self::JoinStream>, Status> {
         let (tx, rx) = mpsc::channel(128);
         tokio::spawn(initialize_agents(self.start_ts, self.load_command.clone(), tx.clone()));
-        tokio::spawn(handle_messages(request.into_inner(), tx.clone()));
+        tokio::spawn(handle_messages(request.into_inner(), tx));
         Ok(Response::new(Box::pin(ReceiverStream::new(rx).map(Ok))))
     }
 }
@@ -70,7 +69,7 @@ async fn handle_messages(mut msg_stream: Streaming<AgentMessage>, sender: Sender
                             let model_acc = acc.entry(model_stats.model.clone())
                                 .or_insert_with(HashMap::new);
                             for state_stats in &model_stats.states {
-                                let mut acc_state_stats = model_acc.entry(state_stats.state_id)
+                                let acc_state_stats = model_acc.entry(state_stats.state_id)
                                     .or_insert(0);
                                 *acc_state_stats += state_stats.count;
                             }
@@ -138,7 +137,7 @@ async fn main() {
             script: fs::read_to_string(config.script_path).expect("Error loading script file")
         })
     };
-    let tonic_server = Server::builder()
+    Server::builder()
         .add_service(grpc::hailstorm_service_server::HailstormServiceServer::new(hailstorm_server))
         .serve(config.address.to_socket_addrs().unwrap().next().unwrap())
         .await
