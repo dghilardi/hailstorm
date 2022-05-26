@@ -1,5 +1,6 @@
 use actix::{Actor, ActorContext, Addr, Context, Handler, Message};
 use crate::simulation::simulation_actor::{SimulationActor, UserStateChange};
+use crate::simulation::user::registry::User;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub enum UserState {
@@ -23,16 +24,19 @@ impl From<UserState> for u32 {
 pub struct UserActor {
     user_id: u64,
     simulation_addr: Addr<SimulationActor>,
+    user: User,
 }
 
 impl UserActor {
     pub fn new(
         user_id: u64,
         simulation_addr: Addr<SimulationActor>,
+        user: User,
     ) -> Self {
         Self {
             user_id,
-            simulation_addr
+            simulation_addr,
+            user,
         }
     }
 }

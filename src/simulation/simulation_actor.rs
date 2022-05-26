@@ -87,9 +87,13 @@ impl SimulationActor {
                     let mut rng = thread_rng();
                     for _idx in 0..(count - running_count) {
                         let usr_id = rng.next_u64();
+                        let user_behaviour = self.user_registry
+                            .as_ref()
+                            .expect("Script not defined")
+                            .build_user();
                         users.insert(usr_id, SimulationUser {
                             state: UserState::Running,
-                            addr: UserActor::create(|_| UserActor::new(usr_id, ctx.address())),
+                            addr: UserActor::create(|_| UserActor::new(usr_id, ctx.address(), user_behaviour)),
                         });
                     }
                 }
