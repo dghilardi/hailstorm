@@ -3,6 +3,7 @@ use std::time::{Duration, SystemTime};
 use actix::{Actor, Addr, AsyncContext, Context, Handler, Message, MessageResponse};
 use rand::{RngCore, thread_rng};
 use crate::simulation::error::SimulationError;
+use crate::simulation::user::registry::UserRegistry;
 use crate::simulation::user_actor::{StopUser, UserActor, UserState};
 
 struct SimulationUser {
@@ -13,7 +14,7 @@ struct SimulationUser {
 pub struct SimulationActor {
     agent_id: u64,
     start_ts: Option<SystemTime>,
-    script: Option<String>,
+    user_registry: Option<UserRegistry>,
     agents_count: u32,
     model_shapes: HashMap<String, Box<dyn Fn(f64) -> f64>>,
     sim_users: HashMap<String, HashMap<u64, SimulationUser>>,
@@ -32,7 +33,7 @@ impl SimulationActor {
         Self {
             agent_id,
             start_ts: None,
-            script: None,
+            user_registry: None,
             agents_count: 1,
             model_shapes: Default::default(),
             sim_users: Default::default(),
@@ -74,13 +75,13 @@ impl SimulationActor {
                 users.retain(|_id, u| u.addr.connected());
 
                 if running_count > count {
-                    let to_be_stopped = users.iter_mut()
+                    users.iter_mut()
                         .filter(|(_id, u)| u.state != UserState::Stopping)
                         .take(running_count - count)
                         .for_each(|(_id, u)| {
                             u.state = UserState::Stopping;
                             u.addr.try_send(StopUser)
-                                .unwrap_or_else(|err| log::error!("Error sending stop request"));
+                                .unwrap_or_else(|err| log::error!("Error sending stop request - {err}"));
                         });
                 } else if count > running_count {
                     let mut rng = thread_rng();
@@ -107,10 +108,10 @@ pub struct UserStateChange {
 impl Handler<UserStateChange> for SimulationActor {
     type Result = ();
 
-    fn handle(&mut self, msg: UserStateChange, ctx: &mut Self::Context) -> Self::Result {
-        let mut model_entry = self.sim_users.iter_mut()
-            .filter(|(_m, u)| u.contains_key(&msg.user_id))
-            .next();
+    fn handle(&mut self, msg: UserStateChange, _ctx: &mut Self::Context) -> Self::Result {
+        let model_entry = self.sim_users.iter_mut()
+            .find(|(_m, u)| u.contains_key(&msg.user_id));
+
         if matches!(msg.state, UserState::Stopped) {
             model_entry
                 .map(|(_m, u)| u.remove(&msg.user_id));
@@ -140,7 +141,7 @@ pub enum SimulationCommand {
 impl Handler<SimulationCommand> for SimulationActor {
     type Result = ();
 
-    fn handle(&mut self, msg: SimulationCommand, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: SimulationCommand, _ctx: &mut Self::Context) -> Self::Result {
         match msg {
             SimulationCommand::LoadSimulation { model_shapes, script } => {
                 model_shapes
@@ -150,7 +151,7 @@ impl Handler<SimulationCommand> for SimulationActor {
                     .err()
                     .map(|err| log::error!("Error registering simulation clients - {err}"));
 
-                self.script = Some(script);
+                self.user_registry = Some(UserRegistry::new(&script).expect("Error parsing script"));
             }
             SimulationCommand::LaunchSimulation { start_ts } => {
                 self.start_ts = Some(start_ts);
@@ -190,8 +191,8 @@ pub struct FetchSimulationStats;
 impl Handler<FetchSimulationStats> for SimulationActor {
     type Result = SimulationStats;
 
-    fn handle(&mut self, msg: FetchSimulationStats, ctx: &mut Self::Context) -> Self::Result {
-        let state = match (self.start_ts.as_ref(), self.script.as_ref()) {
+    fn handle(&mut self, _msg: FetchSimulationStats, _ctx: &mut Self::Context) -> Self::Result {
+        let state = match (self.start_ts.as_ref(), self.user_registry.as_ref()) {
             (_, None) => SimulationState::Idle,
             (None, Some(_)) => SimulationState::Ready,
             (Some(ts), Some(_)) if *ts < SystemTime::now() => SimulationState::Running,
@@ -217,7 +218,7 @@ impl Handler<FetchSimulationStats> for SimulationActor {
 fn count_by_state(usr_map: &HashMap<u64, SimulationUser>) -> HashMap<UserState, usize> {
     let mut group_by_state = HashMap::new();
 
-    for (_id, usr) in usr_map {
+    for usr in usr_map.values() {
         let entry = group_by_state.entry(usr.state)
             .or_insert(0);
         *entry += 1;
