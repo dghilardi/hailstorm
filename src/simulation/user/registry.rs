@@ -133,21 +133,20 @@ mod test {
     #[test]
     fn test_new_registry_creation() {
         let registry = UserRegistry::new(r###"
-          struct Hailstone {
-            id
+        struct Demo { id }
+        impl Demo {
+            pub fn register_user(user) {
+                user.register_action(10.0, Self::do_something);
+                user.register_action(10.0, Self::do_something_else);
           }
-
-          impl Hailstone {
             pub fn new() {
               Self { id: 10 }
             }
-
-            pub fn register_user(user) {
-              user.register_action(10.0, Self::do_http_req);
+            pub async fn do_something(self) {
+                dbg(self)
             }
-
-            pub async fn do_http_req(self) {
-              http::get("localhost:80").await;
+            pub async fn do_something_else(self) {
+                println("something else")
             }
           }
         "###).expect("Error building registry");
