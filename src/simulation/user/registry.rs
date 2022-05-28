@@ -1,16 +1,17 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use rune::{Context, Diagnostics, Hash, InstFnNameHash, Source, Sources, Unit, Value, Vm};
 use rune::compile::{Component, Item};
 use rune::runtime::debug::DebugArgs;
-use rune::runtime::{RuntimeContext, VmError};
+use rune::runtime::RuntimeContext;
 use crate::simulation::rune::user_mod;
-use crate::simulation::rune::user_mod::HailstormUser;
+use crate::simulation::rune::user_mod::UserBehaviour;
 use crate::simulation::user::error::UserError;
 
 #[derive(Debug)]
 pub struct UserRegistry {
-    user_types: HashMap<String, HailstormUser>,
+    user_types: HashMap<String, UserBehaviour>,
     runtime: Arc<RuntimeContext>,
     unit: Arc<Unit>,
 }
@@ -66,8 +67,8 @@ impl UserRegistry {
                 v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("new".into_name()))) &&
                     v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("register_user".into_name())))
             )
-            .flat_map(|(k, sig)| {
-                let mut user = HailstormUser::new();
+            .flat_map(|(k, _sig)| {
+                let mut user = UserBehaviour::default();
                 let register_out = vm.call(&[k.clone(), String::from("register_user")], (&mut user, ));
 
                 match register_out {
@@ -87,15 +88,39 @@ impl UserRegistry {
         })
     }
 
-    pub fn build_user(&self) -> User {
-        User {
-            vm: rune::Vm::new(self.runtime.clone(), self.unit.clone())
-        }
+    pub fn build_user(&self, model: &str) -> Option<User> {
+        self.user_types
+            .get(model)
+            .map(|b| {
+                let mut vm = rune::Vm::new(self.runtime.clone(), self.unit.clone());
+                let instance = vm.call([model, "new"], ()).expect("Error construction");
+                User {
+                    behaviour: b.clone(),
+                    instance,
+                    vm,
+                }
+            })
     }
 }
 
 pub struct User {
+    behaviour: UserBehaviour,
+    instance: Value,
     vm: rune::Vm,
+}
+
+impl User {
+    pub fn get_interval(&self) -> Duration {
+        self.behaviour.get_interval()
+    }
+
+    pub async fn run_random_action(&mut self) {
+        let action_hash = self.behaviour.random_action();
+        let action_out = self.vm.async_call(action_hash, (&self.instance,)).await;
+        if let Err(e) = action_out {
+            log::error!("Error executing action - {e}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -109,12 +134,16 @@ mod test {
         impl Demo {
             pub fn register_user(user) {
                 user.register_action(10.0, Self::do_something);
+                user.register_action(10.0, Self::do_something_else);
             }
             pub fn new() {
                 Self { id: 10 }
             }
             pub async fn do_something(self) {
                 dbg(self)
+            }
+            pub async fn do_something_else(self) {
+                println("something else")
             }
         }
         "###).expect("Error building registry");
@@ -125,6 +154,6 @@ mod test {
 
         let mut vm = Vm::new(registry.runtime, registry.unit);
         let instance = vm.call(&["Demo", "new"], ()).unwrap();
-        vm.call(user.random_action(), (&instance,)).expect("Error running action");
+        vm.call(user.random_action(), (&instance, )).expect("Error running action");
     }
 }

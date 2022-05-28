@@ -90,10 +90,11 @@ impl SimulationActor {
                         let user_behaviour = self.user_registry
                             .as_ref()
                             .expect("Script not defined")
-                            .build_user();
+                            .build_user(model);
+
                         users.insert(usr_id, SimulationUser {
                             state: UserState::Running,
-                            addr: UserActor::create(|_| UserActor::new(usr_id, ctx.address(), user_behaviour)),
+                            addr: UserActor::create(|_| UserActor::new(usr_id, ctx.address(), user_behaviour.expect("Model not found in registry"))),
                         });
                     }
                 }
