@@ -6,14 +6,8 @@ pub enum UserError {
     NoDebugInfo,
     #[error("Rune initialization error")]
     RuneInitError(String),
-    #[error("Build Error")]
-    BuildError,
-}
-
-impl From<BuildError> for UserError {
-    fn from(_: BuildError) -> Self {
-        Self::BuildError
-    }
+    #[error("Build Error - {0}")]
+    BuildError(String),
 }
 
 impl From<ContextError> for UserError {

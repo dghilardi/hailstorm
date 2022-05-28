@@ -26,6 +26,8 @@ pub struct FunSignature {
 impl UserRegistry {
     pub fn new(script: &str) -> Result<Self, UserError> {
         let mut context = Context::with_default_modules().unwrap();
+        context.install(&rune_modules::http::module(true)?)?;
+        context.install(&rune_modules::json::module(true)?)?;
         context.install(&user_mod::module()?)?;
         let runtime = Arc::new(context.runtime());
 
@@ -38,7 +40,8 @@ impl UserRegistry {
             .with_context(&context)
             .with_diagnostics(&mut diagnostics)
             .build()
-            .map(Arc::new)?;
+            .map(Arc::new)
+            .map_err(|e| UserError::BuildError(format!("diagnostics: {diagnostics:?}")))?;
 
         let mut vm = Vm::new(runtime.clone(), unit.clone());
 
@@ -130,22 +133,23 @@ mod test {
     #[test]
     fn test_new_registry_creation() {
         let registry = UserRegistry::new(r###"
-        struct Demo { id }
-        impl Demo {
-            pub fn register_user(user) {
-                user.register_action(10.0, Self::do_something);
-                user.register_action(10.0, Self::do_something_else);
-            }
+          struct Hailstone {
+            id
+          }
+
+          impl Hailstone {
             pub fn new() {
-                Self { id: 10 }
+              Self { id: 10 }
             }
-            pub async fn do_something(self) {
-                dbg(self)
+
+            pub fn register_user(user) {
+              user.register_action(10.0, Self::do_http_req);
             }
-            pub async fn do_something_else(self) {
-                println("something else")
+
+            pub async fn do_http_req(self) {
+              http::get("localhost:80").await;
             }
-        }
+          }
         "###).expect("Error building registry");
 
         assert!(registry.user_types.contains_key("Demo"));
