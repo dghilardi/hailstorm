@@ -1,20 +1,27 @@
 use std::pin::Pin;
-use actix::Addr;
+use actix::Recipient;
 use futures::{Stream, StreamExt};
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Code, Request, Response, Status, Streaming};
 use crate::communication::grpc::{AgentMessage, ControllerCommand};
 use crate::communication::grpc::hailstorm_service_server::HailstormService;
-use crate::communication::server_actor::{HailstormServerActor, RegisterConnectedAgentMsg};
+
+#[derive(actix::Message)]
+#[rtype(result = "()")]
+pub struct RegisterConnectedAgentMsg {
+    pub states_stream: Streaming<AgentMessage>,
+    pub cmd_sender: Sender<ControllerCommand>,
+}
 
 pub struct HailstormGrpcServer {
-    server_actor_addr: Addr<HailstormServerActor>,
+    server_actor_addr: Recipient<RegisterConnectedAgentMsg>,
 }
 
 impl HailstormGrpcServer {
     pub fn new(
-        server_actor_addr: Addr<HailstormServerActor>,
+        server_actor_addr: Recipient<RegisterConnectedAgentMsg>,
     ) -> Self {
         Self {
             server_actor_addr

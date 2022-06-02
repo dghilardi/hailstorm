@@ -43,7 +43,7 @@ impl AgentBuilder {
             .map(Actor::start)
             .collect::<Vec<_>>();
 
-        let hailstorm_server = HailstormGrpcServer::new(server_actor);
+        let hailstorm_server = HailstormGrpcServer::new(server_actor.recipient());
         Server::builder()
             .add_service(grpc::hailstorm_service_server::HailstormServiceServer::new(hailstorm_server))
             .serve(self.address)

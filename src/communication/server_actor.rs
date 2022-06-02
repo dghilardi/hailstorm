@@ -1,12 +1,11 @@
 use actix::{Actor, Addr, AsyncContext, Context, Handler, StreamHandler};
 use futures::future::ready;
 use futures::StreamExt;
-use tokio::sync::mpsc::Sender;
-use tonic::Streaming;
 use crate::communication::downstream_agent_actor::DownstreamAgentActor;
-use crate::communication::grpc::{AgentMessage, ControllerCommand};
+use crate::communication::grpc::AgentMessage;
 use crate::communication::message::ControllerCommandMessage;
 use crate::communication::notifier_actor::{AgentUpdateMessage, UpdatesNotifierActor};
+use crate::server::RegisterConnectedAgentMsg;
 
 pub struct HailstormServerActor {
     updater_addr: Addr<UpdatesNotifierActor>,
@@ -24,13 +23,6 @@ impl HailstormServerActor {
             downstream_agents: vec![]
         }
     }
-}
-
-#[derive(actix::Message)]
-#[rtype(result = "()")]
-pub struct RegisterConnectedAgentMsg {
-    pub states_stream: Streaming<AgentMessage>,
-    pub cmd_sender: Sender<ControllerCommand>,
 }
 
 impl Handler<RegisterConnectedAgentMsg> for HailstormServerActor {
