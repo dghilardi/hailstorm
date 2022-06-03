@@ -3,7 +3,7 @@ use std::ops::Add;
 use std::pin::Pin;
 use std::time::{Duration, SystemTime};
 
-use actix::{Actor, AsyncContext, Context, Handler};
+use actix::{Actor, AsyncContext, AtomicResponse, Context, Handler, WrapFuture};
 use futures::{Stream, StreamExt};
 use futures::future::ready;
 use tokio::sync::mpsc::{self, Sender};
@@ -103,6 +103,16 @@ async fn initialize_agents(
     }
 }
 
+async fn align_agents_simulation_state(state: SimulationState, downstream: Vec<Sender<ControllerCommand>>) {
+    for sender in downstream {
+        match &state {
+            SimulationState::Idle => {}
+            SimulationState::Ready { simulation } => initialize_agents(None, simulation.clone(), sender).await,
+            SimulationState::Launched { start_ts, simulation } => initialize_agents(Some(*start_ts), simulation.clone(), sender).await,
+        }
+    }
+}
+
 #[derive(actix::Message)]
 #[rtype(result = "()")]
 pub struct TerminatedStream(usize);
@@ -125,7 +135,7 @@ impl Handler<ReceivedAgentMessage> for ControllerActor {
     fn handle(&mut self, ReceivedAgentMessage(msg, idx): ReceivedAgentMessage, _ctx: &mut Self::Context) -> Self::Result {
         let pre_handle_agents_count = self.count_agents();
 
-        let ref mut agent_ids = self.downstream_agents
+        let agent_ids = &mut self.downstream_agents
             .get_mut(idx)
             .expect(&format!("No downstream agent with index {idx}"))
             .agent_ids;
@@ -175,5 +185,54 @@ impl ControllerActor {
             .map(ToOwned::to_owned)
             .collect::<HashSet<u64>>()
             .len()
+    }
+}
+
+#[derive(actix::Message)]
+#[rtype(result = "()")]
+pub struct LoadSimulation(pub SimulationDef);
+
+impl Handler<LoadSimulation> for ControllerActor {
+    type Result = AtomicResponse<Self, ()>;
+
+    fn handle(&mut self, LoadSimulation(simulation): LoadSimulation, ctx: &mut Self::Context) -> Self::Result {
+        self.simulation = SimulationState::Ready {
+            simulation
+        };
+
+        let simulation_state = self.simulation.clone();
+        let connected_agents = self.downstream_agents.iter()
+            .map(|dc| dc.sender.clone())
+            .collect::<Vec<_>>();
+        AtomicResponse::new(Box::pin(async move {
+            align_agents_simulation_state(simulation_state, connected_agents).await;
+        }.into_actor(self)))
+    }
+}
+
+#[derive(actix::Message)]
+#[rtype(result = "()")]
+pub struct StartSimulation(pub SystemTime);
+
+impl Handler<StartSimulation> for ControllerActor {
+    type Result = AtomicResponse<Self, ()>;
+
+    fn handle(&mut self, StartSimulation(start_ts): StartSimulation, ctx: &mut Self::Context) -> Self::Result {
+        self.simulation = match &self.simulation {
+            SimulationState::Idle => {
+                log::warn!("Ignoring StartSimulation command as state is idle");
+                SimulationState::Idle
+            },
+            SimulationState::Ready { simulation } => SimulationState::Launched { start_ts, simulation: simulation.clone() },
+            SimulationState::Launched { simulation, .. } => SimulationState::Launched { start_ts, simulation: simulation.clone() },
+        };
+
+        let simulation_state = self.simulation.clone();
+        let connected_agents = self.downstream_agents.iter()
+            .map(|dc| dc.sender.clone())
+            .collect::<Vec<_>>();
+        AtomicResponse::new(Box::pin(async move {
+            align_agents_simulation_state(simulation_state, connected_agents).await;
+        }.into_actor(self)))
     }
 }

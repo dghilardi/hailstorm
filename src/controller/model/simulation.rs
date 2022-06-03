@@ -4,14 +4,14 @@ use crate::grpc::{ClientDistribution, LoadSimCommand};
 
 #[derive(Clone)]
 pub struct UserDef {
-    model: String,
-    shape: String,
+    pub model: String,
+    pub shape: String,
 }
 
 #[derive(Clone)]
 pub struct SimulationDef {
-    users: Vec<UserDef>,
-    script: String,
+    pub users: Vec<UserDef>,
+    pub script: String,
 }
 
 impl From<SimulationDef> for LoadSimCommand {
@@ -25,6 +25,7 @@ impl From<SimulationDef> for LoadSimCommand {
     }
 }
 
+#[derive(Clone)]
 pub enum SimulationState {
     Idle,
     Ready { simulation: SimulationDef },

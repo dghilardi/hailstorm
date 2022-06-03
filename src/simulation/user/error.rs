@@ -1,4 +1,4 @@
-use rune::{BuildError, ContextError};
+use rune::ContextError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum UserError {
