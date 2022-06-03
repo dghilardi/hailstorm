@@ -7,4 +7,4 @@ pub use communication::server;
 mod communication;
 pub mod agent;
 mod simulation;
-
+pub mod controller;
