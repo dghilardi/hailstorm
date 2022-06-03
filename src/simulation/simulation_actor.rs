@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 use actix::{Actor, Addr, AsyncContext, Context, Handler, Message, MessageResponse};
@@ -74,28 +75,34 @@ impl SimulationActor {
 
                 users.retain(|_id, u| u.addr.connected());
 
-                if running_count > count {
-                    users.iter_mut()
-                        .filter(|(_id, u)| u.state != UserState::Stopping)
-                        .take(running_count - count)
-                        .for_each(|(_id, u)| {
-                            u.state = UserState::Stopping;
-                            u.addr.try_send(StopUser)
-                                .unwrap_or_else(|err| log::error!("Error sending stop request - {err}"));
-                        });
-                } else if count > running_count {
-                    let mut rng = thread_rng();
-                    for _idx in 0..(count - running_count) {
-                        let usr_id = rng.next_u64();
-                        let user_behaviour = self.user_registry
-                            .as_ref()
-                            .expect("Script not defined")
-                            .build_user(model);
+                match count.cmp(&running_count) {
+                    Ordering::Less => {
+                        users.iter_mut()
+                            .filter(|(_id, u)| u.state != UserState::Stopping)
+                            .take(running_count - count)
+                            .for_each(|(_id, u)| {
+                                u.state = UserState::Stopping;
+                                u.addr.try_send(StopUser)
+                                    .unwrap_or_else(|err| log::error!("Error sending stop request - {err}"));
+                            });
+                    }
+                    Ordering::Equal => {
+                        // running number is as expected
+                    }
+                    Ordering::Greater => {
+                        let mut rng = thread_rng();
+                        for _idx in 0..(count - running_count) {
+                            let usr_id = rng.next_u64();
+                            let user_behaviour = self.user_registry
+                                .as_ref()
+                                .expect("Script not defined")
+                                .build_user(model);
 
-                        users.insert(usr_id, SimulationUser {
-                            state: UserState::Running,
-                            addr: UserActor::create(|_| UserActor::new(usr_id, ctx.address(), user_behaviour.expect("Model not found in registry"))),
-                        });
+                            users.insert(usr_id, SimulationUser {
+                                state: UserState::Running,
+                                addr: UserActor::create(|_| UserActor::new(usr_id, ctx.address(), user_behaviour.expect("Model not found in registry"))),
+                            });
+                        }
                     }
                 }
             }
@@ -121,9 +128,12 @@ impl Handler<UserStateChange> for SimulationActor {
             model_entry
                 .map(|(_m, u)| u.remove(&msg.user_id));
         } else {
-            model_entry
-                .and_then(|(_m, u)| u.get_mut(&msg.user_id))
-                .map(|u| u.state = msg.state);
+            let maybe_simulation_user = model_entry
+                .and_then(|(_m, u)| u.get_mut(&msg.user_id));
+
+            if let Some(u) = maybe_simulation_user {
+                u.state = msg.state;
+            }
         }
     }
 }
@@ -149,12 +159,14 @@ impl Handler<SimulationCommand> for SimulationActor {
     fn handle(&mut self, msg: SimulationCommand, _ctx: &mut Self::Context) -> Self::Result {
         match msg {
             SimulationCommand::LoadSimulation { model_shapes, script } => {
-                model_shapes
+                let model_registration_out = model_shapes
                     .into_iter()
                     .map(|(model, shape)| self.register_model(model, shape))
-                    .collect::<Result<Vec<_>, _>>()
-                    .err()
-                    .map(|err| log::error!("Error registering simulation clients - {err}"));
+                    .collect::<Result<Vec<_>, _>>();
+
+                if let Err(err) = model_registration_out {
+                    log::error!("Error registering simulation clients - {err}")
+                }
 
                 self.user_registry = Some(UserRegistry::new(&script).expect("Error parsing script"));
             }

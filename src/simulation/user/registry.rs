@@ -41,7 +41,7 @@ impl UserRegistry {
             .with_diagnostics(&mut diagnostics)
             .build()
             .map(Arc::new)
-            .map_err(|e| UserError::BuildError(format!("diagnostics: {diagnostics:?}")))?;
+            .map_err(|_| UserError::BuildError(format!("diagnostics: {diagnostics:?}")))?;
 
         let mut vm = Vm::new(runtime.clone(), unit.clone());
 

@@ -1,17 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Add;
-use std::pin::Pin;
 use std::time::{Duration, SystemTime};
 
 use actix::{Actor, AsyncContext, AtomicResponse, Context, Handler, WrapFuture};
-use futures::{Stream, StreamExt};
 use futures::future::ready;
-use tokio::sync::mpsc::{self, Sender};
-use tokio_stream::wrappers::ReceiverStream;
-use tonic::Response;
-use tonic::Status;
-use crate::controller::metrics_storage::MetricsStorage;
+use futures::StreamExt;
+use tokio::sync::mpsc::Sender;
 
+use crate::controller::metrics_storage::MetricsStorage;
 use crate::controller::model::simulation::{SimulationDef, SimulationState};
 use crate::grpc::{AgentMessage, ControllerCommand, LaunchCommand};
 use crate::grpc::controller_command::Command;
@@ -55,8 +51,6 @@ impl ControllerActor {
 impl Actor for ControllerActor {
     type Context = Context<Self>;
 }
-
-type ResponseStream<T> = Pin<Box<dyn Stream<Item=Result<T, Status>> + Send>>;
 
 impl Handler<RegisterConnectedAgentMsg> for ControllerActor {
     type Result = ();
@@ -137,13 +131,13 @@ impl Handler<ReceivedAgentMessage> for ControllerActor {
 
         let agent_ids = &mut self.downstream_agents
             .get_mut(idx)
-            .expect(&format!("No downstream agent with index {idx}"))
+            .unwrap_or_else(|| panic!("No downstream agent with index {idx}"))
             .agent_ids;
 
         for agent_update in msg.updates {
             self.metrics_storage.store(&agent_update);
 
-            let timestamp =  agent_update.timestamp
+            let timestamp = agent_update.timestamp
                 .map(SystemTime::try_from)
                 .transpose()
                 .ok()
@@ -169,9 +163,13 @@ impl Handler<ReceivedAgentMessage> for ControllerActor {
 
         if pre_handle_agents_count != post_handle_agents_count {
             for da in self.downstream_agents.iter() {
-                da.sender.try_send(ControllerCommand {
+                let send_outcome = da.sender.try_send(ControllerCommand {
                     command: Some(Command::UpdateAgentsCount(post_handle_agents_count as u32))
                 });
+
+                if let Err(send_err) = send_outcome {
+                    log::error!("Error sending update-agents-count downstream - {send_err}");
+                }
             }
         }
     }
@@ -195,7 +193,7 @@ pub struct LoadSimulation(pub SimulationDef);
 impl Handler<LoadSimulation> for ControllerActor {
     type Result = AtomicResponse<Self, ()>;
 
-    fn handle(&mut self, LoadSimulation(simulation): LoadSimulation, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, LoadSimulation(simulation): LoadSimulation, _ctx: &mut Self::Context) -> Self::Result {
         self.simulation = SimulationState::Ready {
             simulation
         };
@@ -217,12 +215,12 @@ pub struct StartSimulation(pub SystemTime);
 impl Handler<StartSimulation> for ControllerActor {
     type Result = AtomicResponse<Self, ()>;
 
-    fn handle(&mut self, StartSimulation(start_ts): StartSimulation, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, StartSimulation(start_ts): StartSimulation, _ctx: &mut Self::Context) -> Self::Result {
         self.simulation = match &self.simulation {
             SimulationState::Idle => {
                 log::warn!("Ignoring StartSimulation command as state is idle");
                 SimulationState::Idle
-            },
+            }
             SimulationState::Ready { simulation } => SimulationState::Launched { start_ts, simulation: simulation.clone() },
             SimulationState::Launched { simulation, .. } => SimulationState::Launched { start_ts, simulation: simulation.clone() },
         };

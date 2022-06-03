@@ -23,10 +23,14 @@ impl UpstreamAgentActor {
         let cmd_stream = client.join(ReceiverStream::new(rx)).await.expect("error creating stream")
             .into_inner();
 
-        core_addr.send(RegisterAgentClientMsg {
+        let send_outcome = core_addr.send(RegisterAgentClientMsg {
             cmd_stream,
             msg_sender: tx,
         }).await;
+
+        if let Err(send_err) = send_outcome {
+            log::error!("Error sending RegisterAgentClientMsg - {send_err}");
+        }
 
         Ok(Self {
             core_addr,
