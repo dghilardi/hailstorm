@@ -1,7 +1,9 @@
 use std::future::ready;
-use std::time::Duration;
+use std::ops::Add;
+use std::time::{Duration, SystemTime};
 
-use actix::{Actor, Addr, AsyncContext, Context, Handler, MailboxError, StreamHandler};
+use actix::{Actor, ActorFutureExt, ActorTryFutureExt, Addr, AsyncContext, Context, Handler, StreamHandler, WrapFuture};
+use futures::future::ok;
 use futures::StreamExt;
 use rand::{Rng, thread_rng};
 use tokio::sync::mpsc::Sender;
@@ -13,13 +15,22 @@ use crate::communication::notifier_actor::{AgentUpdateMessage, RegisterAgentUpda
 use crate::communication::server_actor::HailstormServerActor;
 use crate::grpc;
 use crate::grpc::controller_command::Command;
-use crate::simulation::simulation_actor::{FetchSimulationStats, SimulationActor, SimulationCommand, SimulationState};
+use crate::simulation::simulation_actor::{ClientStats, FetchSimulationStats, SimulationActor, SimulationCommand, SimulationState, SimulationStats};
+use crate::simulation::user_actor::UserState;
+
+struct AggregatedUserStateMetric {
+    timestamp: SystemTime,
+    model: String,
+    state: UserState,
+    count: usize,
+}
 
 pub struct AgentCoreActor {
     agent_id: u64,
     notifier_addr: Addr<UpdatesNotifierActor>,
     server_addr: Addr<HailstormServerActor>,
     simulation_addr: Addr<SimulationActor>,
+    last_sent_metrics: Vec<AggregatedUserStateMetric>,
 }
 
 impl AgentCoreActor {
@@ -34,45 +45,94 @@ impl AgentCoreActor {
             notifier_addr,
             server_addr,
             simulation_addr,
+            last_sent_metrics: vec![],
         }
     }
 
 
-    fn send_data(&mut self) {
+    fn send_data(&mut self, ctx: &mut actix::Context<Self>) {
         let agent_id = self.agent_id;
         let notifier_addr = self.notifier_addr.clone();
         let simulation_addr = self.simulation_addr.clone();
-        actix::spawn(async move {
-            let stats = simulation_addr.send(FetchSimulationStats).await
+
+        let fut = async move {
+            simulation_addr.send(FetchSimulationStats).await
                 .map_err(|err| {
                     log::error!("Error fetching simulation stats - {err}");
                     err
-                })?;
+                })
+        }
+            .into_actor(self)
+            .and_then(move |in_stats: SimulationStats, act, _ctx| {
+                let state = match in_stats.state {
+                    SimulationState::Idle => grpc::AgentState::Idle,
+                    SimulationState::Ready => grpc::AgentState::Ready,
+                    SimulationState::Waiting => grpc::AgentState::Waiting,
+                    SimulationState::Running => grpc::AgentState::Running,
+                    SimulationState::Stopping => grpc::AgentState::Stopping,
+                };
 
-            let state = match stats.state {
-                SimulationState::Idle => grpc::AgentState::Idle,
-                SimulationState::Ready => grpc::AgentState::Ready,
-                SimulationState::Waiting => grpc::AgentState::Waiting,
-                SimulationState::Running => grpc::AgentState::Running,
-                SimulationState::Stopping => grpc::AgentState::Stopping,
-            };
-
-            notifier_addr.try_send(AgentUpdateMessage(AgentUpdate {
-                agent_id,
-                stats: stats.stats.into_iter()
+                let stats = act.update_simulation_stats(in_stats.stats, in_stats.timestamp)
+                    .into_iter()
                     .map(Into::into)
-                    .collect(),
-                update_id: thread_rng().gen(),
-                timestamp: Some(stats.timestamp.into()),
-                name: "".to_string(),
-                state: state as i32,
-                simulation_id: "".to_string(),
-            })).unwrap_or_else(|err| {
-                log::error!("Error sending agent stats to notifier actor {err}");
+                    .collect();
+
+                notifier_addr.try_send(AgentUpdateMessage(AgentUpdate {
+                    agent_id,
+                    stats,
+                    update_id: thread_rng().gen(),
+                    timestamp: Some(in_stats.timestamp.into()),
+                    name: "".to_string(),
+                    state: state as i32,
+                    simulation_id: "".to_string(),
+                })).unwrap_or_else(|err| {
+                    log::error!("Error sending agent stats to notifier actor {err}");
+                });
+
+                ok(())
+            }).map(|res, _act, _ctx| {
+                if let Err(err) = res {
+                    log::error!("Error sending agent stats {err}");
+                }
             });
 
-            Result::<_, MailboxError>::Ok(())
-        });
+        ctx.spawn(fut);
+    }
+
+    fn update_simulation_stats(&mut self, stats: Vec<ClientStats>, timestamp: SystemTime) -> Vec<ClientStats> {
+        stats.into_iter()
+            .map(|mut client| {
+
+                self.last_sent_metrics.iter()
+                    .filter(|m| m.model.eq(&client.model) && !client.count_by_state.contains_key(&m.state))
+                    .collect::<Vec<_>>().into_iter()
+                    .for_each(|m| { client.count_by_state.insert(m.state, 0); });
+
+                client.count_by_state = client.count_by_state
+                    .into_iter()
+                    .filter(|(state, count)| {
+                        if let Some(sent_metrics) = self.last_sent_metrics.iter_mut().find(|m| m.model.eq(&client.model) && m.state.eq(state)) {
+                            if *count != sent_metrics.count || (*count > 0 && sent_metrics.timestamp.add(Duration::from_secs(25)) < timestamp) {
+                                sent_metrics.count = *count;
+                                sent_metrics.timestamp = timestamp;
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            self.last_sent_metrics.push(AggregatedUserStateMetric {
+                                timestamp,
+                                model: client.model.clone(),
+                                state: *state,
+                                count: *count
+                            });
+                            true
+                        }
+                    })
+                    .collect();
+                client
+            })
+            .collect()
     }
 }
 
@@ -80,7 +140,7 @@ impl Actor for AgentCoreActor {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        ctx.run_interval(Duration::from_secs(3), |actor, _ctx| actor.send_data());
+        ctx.run_interval(Duration::from_secs(3), |actor, ctx| actor.send_data(ctx));
     }
 }
 
