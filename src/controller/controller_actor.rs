@@ -1,15 +1,18 @@
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
-use actix::{Actor, AsyncContext, AtomicResponse, Context, Handler, WrapFuture};
+use actix::{Actor, ActorFutureExt, AsyncContext, AtomicResponse, Context, Handler, WrapFuture};
 use futures::future::ready;
 use futures::StreamExt;
+use rand::{RngCore, thread_rng};
+use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::Sender;
 
 use crate::controller::metrics_storage::MetricsStorage;
 use crate::controller::model::simulation::{SimulationDef, SimulationState};
-use crate::grpc::{AgentMessage, ControllerCommand, LaunchCommand};
+use crate::grpc::{AgentMessage, AgentUpdate, ControllerCommand, LaunchCommand};
 use crate::grpc::controller_command::Command;
 use crate::server::RegisterConnectedAgentMsg;
 
@@ -33,7 +36,7 @@ impl DownstreamConnection {
 }
 
 pub struct ControllerActor {
-    downstream_agents: Vec<DownstreamConnection>,
+    downstream_agents: HashMap<u64, DownstreamConnection>,
     simulation: SimulationState,
     metrics_storage: Box<dyn MetricsStorage>,
 }
@@ -42,7 +45,7 @@ impl ControllerActor {
     pub fn new(metrics_storage: impl MetricsStorage + 'static) -> Self {
         Self {
             metrics_storage: Box::new(metrics_storage),
-            downstream_agents: vec![],
+            downstream_agents: Default::default(),
             simulation: SimulationState::Idle,
         }
     }
@@ -65,13 +68,13 @@ impl Handler<RegisterConnectedAgentMsg> for ControllerActor {
                 tokio::spawn(initialize_agents(Some(*start_ts), simulation.clone(), msg.cmd_sender.clone()));
             }
         }
-        let address = ctx.address();
-        let stream_idx = self.downstream_agents.len();
-        self.downstream_agents.push(DownstreamConnection::new(msg.cmd_sender));
+
+        let channel_id = thread_rng().next_u64();
+        self.downstream_agents.insert(channel_id, DownstreamConnection::new(msg.cmd_sender));
         ctx.add_message_stream(
             msg.states_stream
                 .filter_map(move |result| ready(result
-                    .map(|agent_msg| ReceivedAgentMessage(agent_msg, stream_idx))
+                    .map(|agent_msg| ReceivedAgentMessage(agent_msg, channel_id))
                     .map_err(|err| log::error!("Error receiving agent message - {err}"))
                     .ok()
                 ))
@@ -83,45 +86,32 @@ async fn initialize_agents(
     maybe_start_ts: Option<SystemTime>,
     simulation: SimulationDef,
     sender: Sender<ControllerCommand>,
-) {
-    sender.send(ControllerCommand { command: Some(Command::Load(simulation.into())) })
-        .await
-        .expect("Error sending load command");
+) -> Result<(), SendError<ControllerCommand>>{
+    sender.send(ControllerCommand { command: Some(Command::Load(simulation.into())) }).await?;
 
     if let Some(start_ts) = maybe_start_ts {
         sender.send(ControllerCommand {
             command: Some(Command::Launch(LaunchCommand { start_ts: Some(start_ts.into()) }))
-        })
-            .await
-            .expect("Error sending launch command");
+        }).await?;
     }
-}
-
-async fn align_agents_simulation_state(state: SimulationState, downstream: Vec<Sender<ControllerCommand>>) {
-    for sender in downstream {
-        match &state {
-            SimulationState::Idle => {}
-            SimulationState::Ready { simulation } => initialize_agents(None, simulation.clone(), sender).await,
-            SimulationState::Launched { start_ts, simulation } => initialize_agents(Some(*start_ts), simulation.clone(), sender).await,
-        }
-    }
+    Ok(())
 }
 
 #[derive(actix::Message)]
 #[rtype(result = "()")]
-pub struct TerminatedStream(usize);
+pub struct TerminatedStream(u64);
 
 impl Handler<TerminatedStream> for ControllerActor {
     type Result = ();
 
     fn handle(&mut self, TerminatedStream(terminated_idx): TerminatedStream, _ctx: &mut Self::Context) -> Self::Result {
-        self.downstream_agents.remove(terminated_idx);
+        self.downstream_agents.remove(&terminated_idx);
     }
 }
 
 #[derive(actix::Message)]
 #[rtype(result = "()")]
-pub struct ReceivedAgentMessage(AgentMessage, usize);
+pub struct ReceivedAgentMessage(AgentMessage, u64);
 
 impl Handler<ReceivedAgentMessage> for ControllerActor {
     type Result = ();
@@ -129,40 +119,22 @@ impl Handler<ReceivedAgentMessage> for ControllerActor {
     fn handle(&mut self, ReceivedAgentMessage(msg, idx): ReceivedAgentMessage, _ctx: &mut Self::Context) -> Self::Result {
         let pre_handle_agents_count = self.count_agents();
 
-        let agent_ids = &mut self.downstream_agents
-            .get_mut(idx)
-            .unwrap_or_else(|| panic!("No downstream agent with index {idx}"))
-            .agent_ids;
+        self.update_downstream_data(idx, &msg.updates);
 
         for agent_update in msg.updates {
             self.metrics_storage.store(&agent_update);
-
-            let timestamp = agent_update.timestamp
-                .map(SystemTime::try_from)
-                .transpose()
-                .ok()
-                .flatten()
-                .unwrap_or_else(SystemTime::now);
-
-            let entry = agent_ids
-                .entry(agent_update.agent_id)
-                .or_insert(ConnectedAgent {
-                    last_received_update: timestamp,
-                    agent_id: agent_update.agent_id,
-                });
-
-            if entry.last_received_update < timestamp {
-                entry.last_received_update = timestamp;
-            }
         }
 
-        for da in self.downstream_agents.iter_mut() {
+        for (_, da) in self.downstream_agents.iter_mut() {
             da.agent_ids.retain(|_k, v| v.last_received_update.add(Duration::from_secs(60)) > SystemTime::now())
         }
         let post_handle_agents_count = self.count_agents();
 
         if pre_handle_agents_count != post_handle_agents_count {
-            for da in self.downstream_agents.iter() {
+            self.broadcast_downstream(ControllerCommand {
+                command: Some(Command::UpdateAgentsCount(post_handle_agents_count as u32))
+            });
+            for (_, da) in self.downstream_agents.iter() {
                 let send_outcome = da.sender.try_send(ControllerCommand {
                     command: Some(Command::UpdateAgentsCount(post_handle_agents_count as u32))
                 });
@@ -178,11 +150,70 @@ impl Handler<ReceivedAgentMessage> for ControllerActor {
 impl ControllerActor {
     fn count_agents(&self) -> usize {
         self.downstream_agents
-            .iter()
+            .values()
             .flat_map(|conn| conn.agent_ids.keys())
             .map(ToOwned::to_owned)
             .collect::<HashSet<u64>>()
             .len()
+    }
+
+    fn get_valid_downstream(&mut self) -> &mut HashMap<u64, DownstreamConnection> {
+        self.downstream_agents.retain(|_, da| !da.sender.is_closed());
+        &mut self.downstream_agents
+    }
+
+    fn update_downstream_data(&mut self, channel_id: u64, agent_updates: &[AgentUpdate]) {
+        if let Some(channel_data) = self.downstream_agents.get_mut(&channel_id) {
+            for agent_update in agent_updates {
+                let timestamp = agent_update.timestamp
+                    .clone()
+                    .map(SystemTime::try_from)
+                    .transpose()
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(SystemTime::now);
+
+                let entry = channel_data.agent_ids
+                    .entry(agent_update.agent_id)
+                    .or_insert(ConnectedAgent {
+                        last_received_update: timestamp,
+                        agent_id: agent_update.agent_id,
+                    });
+
+                if entry.last_received_update < timestamp {
+                    entry.last_received_update = timestamp;
+                }
+            }
+        } else {
+            log::warn!("Received data for channel {channel_id} but upstream is not connected anymore");
+        }
+    }
+
+    fn broadcast_downstream(&mut self, command: ControllerCommand) {
+        for (id, connection) in self.get_valid_downstream() {
+            let outcome = connection.sender.try_send(command.clone());
+            if let Err(err) = outcome {
+                log::error!("Error sending command to channel with id {id} - {err}");
+            }
+        }
+    }
+
+    fn align_agents_simulation_state(&mut self, state: SimulationState) -> impl Future<Output=Result<(), SendError<ControllerCommand>>> {
+        let senders = self.get_valid_downstream()
+            .values()
+            .map(|dc| dc.sender.clone())
+            .collect::<Vec<_>>();
+
+        async move {
+            for sender in senders {
+                match &state {
+                    SimulationState::Idle => {}
+                    SimulationState::Ready { simulation } => initialize_agents(None, simulation.clone(), sender.clone()).await?,
+                    SimulationState::Launched { start_ts, simulation } => initialize_agents(Some(*start_ts), simulation.clone(), sender.clone()).await?,
+                }
+            }
+            Ok(())
+        }
     }
 }
 
@@ -199,12 +230,12 @@ impl Handler<LoadSimulation> for ControllerActor {
         };
 
         let simulation_state = self.simulation.clone();
-        let connected_agents = self.downstream_agents.iter()
-            .map(|dc| dc.sender.clone())
-            .collect::<Vec<_>>();
-        AtomicResponse::new(Box::pin(async move {
-            align_agents_simulation_state(simulation_state, connected_agents).await;
-        }.into_actor(self)))
+        AtomicResponse::new(Box::pin(async {}.into_actor(self)
+            .then(|_, act, _ctx| act.align_agents_simulation_state(simulation_state).into_actor(act))
+            .map(|res, _, _| if let Err(err) = res {
+                log::error!("Error sending load-sim command - {err}");
+            })
+        ))
     }
 }
 
@@ -226,11 +257,11 @@ impl Handler<StartSimulation> for ControllerActor {
         };
 
         let simulation_state = self.simulation.clone();
-        let connected_agents = self.downstream_agents.iter()
-            .map(|dc| dc.sender.clone())
-            .collect::<Vec<_>>();
-        AtomicResponse::new(Box::pin(async move {
-            align_agents_simulation_state(simulation_state, connected_agents).await;
-        }.into_actor(self)))
+        AtomicResponse::new(Box::pin(async move {}.into_actor(self)
+            .then(|_, act, _ctx| act.align_agents_simulation_state(simulation_state).into_actor(act))
+            .map(|res, _, _| if let Err(err) = res {
+                log::error!("Error sending load-sim command - {err}");
+            })
+        ))
     }
 }
