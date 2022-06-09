@@ -36,11 +36,19 @@ enum AgentState {
   STOPPING = 4;
 }
 
+enum AgentGroup {
+  ALL = 0;
+}
+
 message ControllerCommand {
   oneof command {
     LoadSimCommand load = 1;
     LaunchCommand launch = 2;
     uint32 updateAgentsCount = 3;
+  }
+  oneof target {
+    AgentGroup group = 10;
+    uint64 agent_id = 11;
   }
 }
 

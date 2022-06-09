@@ -12,8 +12,8 @@ use tokio::sync::mpsc::Sender;
 
 use crate::controller::metrics_storage::MetricsStorage;
 use crate::controller::model::simulation::{SimulationDef, SimulationState};
-use crate::grpc::{AgentMessage, AgentUpdate, ControllerCommand, LaunchCommand};
-use crate::grpc::controller_command::Command;
+use crate::grpc::{AgentMessage, AgentUpdate, ControllerCommand, LaunchCommand, AgentGroup};
+use crate::grpc::controller_command::{Command, Target};
 use crate::server::RegisterConnectedAgentMsg;
 
 struct ConnectedAgent {
@@ -87,10 +87,14 @@ async fn initialize_agents(
     simulation: SimulationDef,
     sender: Sender<ControllerCommand>,
 ) -> Result<(), SendError<ControllerCommand>>{
-    sender.send(ControllerCommand { command: Some(Command::Load(simulation.into())) }).await?;
+    sender.send(ControllerCommand {
+        target: Some(Target::Group(AgentGroup::All as i32)),
+        command: Some(Command::Load(simulation.into()))
+    }).await?;
 
     if let Some(start_ts) = maybe_start_ts {
         sender.send(ControllerCommand {
+            target: Some(Target::Group(AgentGroup::All as i32)),
             command: Some(Command::Launch(LaunchCommand { start_ts: Some(start_ts.into()) }))
         }).await?;
     }
@@ -131,18 +135,7 @@ impl Handler<ReceivedAgentMessage> for ControllerActor {
         let post_handle_agents_count = self.count_agents();
 
         if pre_handle_agents_count != post_handle_agents_count {
-            self.broadcast_downstream(ControllerCommand {
-                command: Some(Command::UpdateAgentsCount(post_handle_agents_count as u32))
-            });
-            for (_, da) in self.downstream_agents.iter() {
-                let send_outcome = da.sender.try_send(ControllerCommand {
-                    command: Some(Command::UpdateAgentsCount(post_handle_agents_count as u32))
-                });
-
-                if let Err(send_err) = send_outcome {
-                    log::error!("Error sending update-agents-count downstream - {send_err}");
-                }
-            }
+            self.broadcast_downstream(Command::UpdateAgentsCount(post_handle_agents_count as u32));
         }
     }
 }
@@ -189,9 +182,12 @@ impl ControllerActor {
         }
     }
 
-    fn broadcast_downstream(&mut self, command: ControllerCommand) {
+    fn broadcast_downstream(&mut self, command: Command) {
         for (id, connection) in self.get_valid_downstream() {
-            let outcome = connection.sender.try_send(command.clone());
+            let outcome = connection.sender.try_send(ControllerCommand {
+                target: Some(Target::Group(AgentGroup::All as i32)),
+                command: Some(command.clone()),
+            });
             if let Err(err) = outcome {
                 log::error!("Error sending command to channel with id {id} - {err}");
             }
