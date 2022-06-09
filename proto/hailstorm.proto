@@ -14,7 +14,7 @@ message AgentUpdate {
   uint64 update_id = 3;
   google.protobuf.Timestamp timestamp = 4;
   string name = 16;
-  AgentState state = 17;
+  AgentSimulationState state = 17;
   string simulation_id = 18;
 }
 
@@ -28,7 +28,7 @@ message ClientGroupStates {
   uint32 count = 2;
 }
 
-enum AgentState {
+enum AgentSimulationState {
   IDLE = 0;
   READY = 1;
   WAITING = 2;
@@ -45,6 +45,7 @@ message ControllerCommand {
     LoadSimCommand load = 1;
     LaunchCommand launch = 2;
     uint32 updateAgentsCount = 3;
+    StopCommand stop = 4;
   }
   oneof target {
     AgentGroup group = 10;
@@ -54,6 +55,10 @@ message ControllerCommand {
 
 message LaunchCommand {
   google.protobuf.Timestamp start_ts = 1;
+}
+
+message StopCommand {
+  bool reset = 1;
 }
 
 message LoadSimCommand {

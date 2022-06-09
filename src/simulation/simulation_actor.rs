@@ -12,6 +12,17 @@ struct SimulationUser {
     addr: Addr<UserActor>,
 }
 
+impl SimulationUser {
+    fn stop_user(&mut self) {
+        let send_outcome = self.addr.try_send(StopUser);
+        if let Err(err) = send_outcome {
+            log::error!("Error stopping user - {}", err);
+        } else {
+            self.state = UserState::Stopping;
+        }
+    }
+}
+
 pub struct SimulationActor {
     agent_id: u64,
     start_ts: Option<SystemTime>,
@@ -80,11 +91,7 @@ impl SimulationActor {
                         users.iter_mut()
                             .filter(|(_id, u)| u.state != UserState::Stopping)
                             .take(running_count - count)
-                            .for_each(|(_id, u)| {
-                                u.state = UserState::Stopping;
-                                u.addr.try_send(StopUser)
-                                    .unwrap_or_else(|err| log::error!("Error sending stop request - {err}"));
-                            });
+                            .for_each(|(_id, u)| u.stop_user());
                     }
                     Ordering::Equal => {
                         // running number is as expected
@@ -106,6 +113,11 @@ impl SimulationActor {
                     }
                 }
             }
+        } else {
+            self.sim_users.iter_mut()
+                .flat_map(|(_m, u)| u.values_mut())
+                .filter(|u| u.state != UserState::Stopping)
+                .for_each(|u| u.stop_user());
         }
     }
 }
@@ -151,6 +163,9 @@ pub enum SimulationCommand {
     UpdateAgentsCount {
         count: u32
     },
+    StopSimulation {
+        reset: bool,
+    }
 }
 
 impl Handler<SimulationCommand> for SimulationActor {
@@ -175,6 +190,13 @@ impl Handler<SimulationCommand> for SimulationActor {
             }
             SimulationCommand::UpdateAgentsCount { count } => {
                 self.agents_count = count;
+            }
+            SimulationCommand::StopSimulation { reset } => {
+                self.start_ts = None;
+                if reset {
+                    self.user_registry = None;
+                    self.model_shapes.clear();
+                }
             }
         }
     }

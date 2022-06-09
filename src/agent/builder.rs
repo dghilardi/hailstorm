@@ -8,7 +8,7 @@ use crate::communication::upstream_agent_actor::UpstreamAgentActor;
 use crate::communication::grpc;
 use crate::communication::notifier_actor::UpdatesNotifierActor;
 use crate::communication::server::HailstormGrpcServer;
-use crate::communication::server_actor::HailstormServerActor;
+use crate::communication::server_actor::AgentServerActor;
 use crate::simulation::simulation_actor::SimulationActor;
 
 pub struct AgentBuilder {
@@ -20,7 +20,7 @@ pub struct AgentBuilder {
 impl AgentBuilder {
     pub async fn launch(self) {
         let updater_addr = UpdatesNotifierActor::create(|_| UpdatesNotifierActor::new());
-        let server_actor = HailstormServerActor::create(|_| HailstormServerActor::new(updater_addr.clone()));
+        let server_actor = AgentServerActor::create(|_| AgentServerActor::new(updater_addr.clone()));
         let simulation_actor = SimulationActor::create(|_| SimulationActor::new(self.agent_id));
         let core_addr = AgentCoreActor::create(|_| AgentCoreActor::new(
             self.agent_id,

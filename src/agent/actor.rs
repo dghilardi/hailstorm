@@ -12,9 +12,10 @@ use tonic::Streaming;
 use crate::communication::grpc::{AgentMessage, AgentUpdate, ControllerCommand};
 use crate::communication::message::ControllerCommandMessage;
 use crate::communication::notifier_actor::{AgentUpdateMessage, RegisterAgentUpdateSender, UpdatesNotifierActor};
-use crate::communication::server_actor::HailstormServerActor;
+use crate::communication::server_actor::AgentServerActor;
 use crate::grpc;
 use crate::grpc::controller_command::Command;
+use crate::grpc::StopCommand;
 use crate::simulation::simulation_actor::{ClientStats, FetchSimulationStats, SimulationActor, SimulationCommand, SimulationState, SimulationStats};
 use crate::simulation::user_actor::UserState;
 
@@ -28,7 +29,7 @@ struct AggregatedUserStateMetric {
 pub struct AgentCoreActor {
     agent_id: u64,
     notifier_addr: Addr<UpdatesNotifierActor>,
-    server_addr: Addr<HailstormServerActor>,
+    server_addr: Addr<AgentServerActor>,
     simulation_addr: Addr<SimulationActor>,
     last_sent_metrics: Vec<AggregatedUserStateMetric>,
 }
@@ -37,7 +38,7 @@ impl AgentCoreActor {
     pub fn new(
         agent_id: u64,
         notifier_addr: Addr<UpdatesNotifierActor>,
-        server_addr: Addr<HailstormServerActor>,
+        server_addr: Addr<AgentServerActor>,
         simulation_addr: Addr<SimulationActor>,
     ) -> Self {
         Self {
@@ -65,11 +66,11 @@ impl AgentCoreActor {
             .into_actor(self)
             .and_then(move |in_stats: SimulationStats, act, _ctx| {
                 let state = match in_stats.state {
-                    SimulationState::Idle => grpc::AgentState::Idle,
-                    SimulationState::Ready => grpc::AgentState::Ready,
-                    SimulationState::Waiting => grpc::AgentState::Waiting,
-                    SimulationState::Running => grpc::AgentState::Running,
-                    SimulationState::Stopping => grpc::AgentState::Stopping,
+                    SimulationState::Idle => grpc::AgentSimulationState::Idle,
+                    SimulationState::Ready => grpc::AgentSimulationState::Ready,
+                    SimulationState::Waiting => grpc::AgentSimulationState::Waiting,
+                    SimulationState::Running => grpc::AgentSimulationState::Running,
+                    SimulationState::Stopping => grpc::AgentSimulationState::Stopping,
                 };
 
                 let stats = act.update_simulation_stats(in_stats.stats, in_stats.timestamp)
@@ -192,7 +193,8 @@ impl From<&Command> for Option<SimulationCommand> {
                     .map_err(|err| log::error!("Error converting timestamp to systemtime - {err}"))
                     .ok()
                 ).map(|start_ts| SimulationCommand::LaunchSimulation { start_ts }),
-            Command::UpdateAgentsCount(count) => Some(SimulationCommand::UpdateAgentsCount { count: *count })
+            Command::UpdateAgentsCount(count) => Some(SimulationCommand::UpdateAgentsCount { count: *count }),
+            Command::Stop(StopCommand { reset }) => Some(SimulationCommand::StopSimulation { reset: *reset }),
         }
     }
 }
