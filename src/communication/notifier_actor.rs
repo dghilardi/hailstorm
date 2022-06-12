@@ -3,6 +3,7 @@ use std::time::Duration;
 use actix::{Actor, AsyncContext, Context, Handler};
 use tokio::sync::mpsc::Sender;
 use crate::communication::grpc::{AgentMessage, AgentUpdate};
+use crate::communication::message::MultiAgentUpdateMessage;
 
 #[derive(Default)]
 pub struct UpdatesNotifierActor {
@@ -50,14 +51,12 @@ impl Handler<RegisterAgentUpdateSender> for UpdatesNotifierActor {
     }
 }
 
-#[derive(actix::Message)]
-#[rtype(result = "()")]
-pub struct AgentUpdateMessage(pub AgentUpdate);
-
-impl Handler<AgentUpdateMessage> for UpdatesNotifierActor {
+impl Handler<MultiAgentUpdateMessage> for UpdatesNotifierActor {
     type Result = ();
 
-    fn handle(&mut self, AgentUpdateMessage(msg): AgentUpdateMessage, _ctx: &mut Self::Context) -> Self::Result {
-        self.frames.insert(msg.update_id, msg);
+    fn handle(&mut self, MultiAgentUpdateMessage(updates): MultiAgentUpdateMessage, _ctx: &mut Self::Context) -> Self::Result {
+        for update in updates {
+            self.frames.insert(update.update_id, update);
+        }
     }
 }

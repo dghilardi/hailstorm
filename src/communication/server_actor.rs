@@ -7,9 +7,9 @@ use futures::StreamExt;
 use rand::{RngCore, thread_rng};
 use crate::communication::downstream_agent_actor::DownstreamAgentActor;
 use crate::communication::grpc::AgentMessage;
-use crate::communication::message::ControllerCommandMessage;
-use crate::communication::notifier_actor::AgentUpdateMessage;
+use crate::communication::message::{ControllerCommandMessage, MultiAgentUpdateMessage};
 use crate::grpc::controller_command::Target;
+use crate::grpc::MultiAgent;
 use crate::server::RegisterConnectedAgentMsg;
 
 struct ConnectedAgent {
@@ -22,7 +22,7 @@ struct DownstreamConnection {
 }
 
 pub struct GrpcServerActor {
-    agent_update_recipient: Recipient<AgentUpdateMessage>,
+    agent_update_recipient: Recipient<MultiAgentUpdateMessage>,
     downstream_agents: HashMap<u64, DownstreamConnection>,
 }
 
@@ -31,7 +31,7 @@ impl Actor for GrpcServerActor {
 }
 
 impl GrpcServerActor {
-    pub fn new(agent_update_recipient: Recipient<AgentUpdateMessage>) -> Self {
+    pub fn new(agent_update_recipient: Recipient<MultiAgentUpdateMessage>) -> Self {
         Self {
             agent_update_recipient,
             downstream_agents: Default::default(),
@@ -74,7 +74,7 @@ pub struct ConnectedAgentMessage {
 impl StreamHandler<ConnectedAgentMessage> for GrpcServerActor {
     fn handle(&mut self, ConnectedAgentMessage { connection_id, message }: ConnectedAgentMessage, _ctx: &mut Self::Context) {
         let connection = self.downstream_agents.get_mut(&connection_id).expect("Connection not defined");
-        for update_item in message.updates {
+        for update_item in message.updates.iter() {
             let timestamp = update_item.timestamp.clone().map(SystemTime::try_from)
                 .transpose().ok().flatten()
                 .unwrap_or_else(SystemTime::now);
@@ -85,11 +85,12 @@ impl StreamHandler<ConnectedAgentMessage> for GrpcServerActor {
             if timestamp > agent_entry.last_received_update {
                 agent_entry.last_received_update = timestamp;
             }
-
-            self.agent_update_recipient
-                .try_send(AgentUpdateMessage(update_item))
-                .unwrap_or_else(|err| log::error!("Error sending update message {err:?}"));
         }
+
+        self.agent_update_recipient
+            .try_send(MultiAgentUpdateMessage(message.updates))
+            .unwrap_or_else(|err| log::error!("Error sending update message {err:?}"));
+
         for (_, da) in self.downstream_agents.iter_mut() {
             da.agent_ids.retain(|_k, v| v.last_received_update.add(Duration::from_secs(60)) > SystemTime::now())
         }
@@ -113,6 +114,10 @@ impl Handler<ControllerCommandMessage> for GrpcServerActor {
                 None => true,
                 Some(Target::Group(_)) => true,
                 Some(Target::AgentId(agent_id)) => conn.agent_ids.contains_key(&agent_id),
+                Some(Target::Agents(MultiAgent { ref agent_ids })) =>
+                    agent_ids
+                        .iter()
+                        .any(|id| conn.agent_ids.contains_key(id)),
             })
             .map(|da| da.sender.clone())
             .collect::<Vec<_>>();

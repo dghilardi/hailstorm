@@ -3,16 +3,15 @@ use std::future::Future;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
-use actix::{Actor, ActorFutureExt, AtomicResponse, Context, Handler, MailboxError, Recipient, ResponseFuture, WrapFuture};
+use actix::{Actor, ActorFutureExt, AtomicResponse, Context, Handler, Recipient, ResponseFuture, WrapFuture};
 use actix::dev::RecipientRequest;
-use futures::future::{join_all, try_join_all};
 
-use crate::communication::message::ControllerCommandMessage;
-use crate::communication::notifier_actor::AgentUpdateMessage;
+use crate::communication::message::{ControllerCommandMessage, MultiAgentUpdateMessage};
 use crate::controller::model::simulation::{SimulationDef, SimulationState};
 use crate::grpc;
-use crate::grpc::{AgentGroup, AgentUpdate, ControllerCommand, LaunchCommand, LoadSimCommand, StopCommand};
-use crate::grpc::controller_command::{Command, Target};
+use crate::grpc::{AgentGroup, AgentUpdate, CommandItem, ControllerCommand, LaunchCommand, LoadSimCommand, MultiAgent, StopCommand};
+use crate::grpc::controller_command::Target;
+use crate::grpc::command_item::Command;
 
 #[derive(Clone, Debug)]
 struct AgentState {
@@ -22,7 +21,7 @@ struct AgentState {
 
 pub struct ControllerActor {
     command_sender: Recipient<ControllerCommandMessage>,
-    metrics_storage: Recipient<AgentUpdateMessage>,
+    metrics_storage: Recipient<MultiAgentUpdateMessage>,
     agents_state: HashMap<u64, AgentState>,
     simulation: SimulationState,
 }
@@ -30,7 +29,7 @@ pub struct ControllerActor {
 impl ControllerActor {
     pub fn new(
         command_sender: Recipient<ControllerCommandMessage>,
-        metrics_storage: Recipient<AgentUpdateMessage>,
+        metrics_storage: Recipient<MultiAgentUpdateMessage>,
     ) -> Self {
         Self {
             command_sender,
@@ -45,19 +44,19 @@ impl Actor for ControllerActor {
     type Context = Context<Self>;
 }
 
-impl Handler<AgentUpdateMessage> for ControllerActor {
+impl Handler<MultiAgentUpdateMessage> for ControllerActor {
     type Result = ResponseFuture<()>;
 
-    fn handle(&mut self, AgentUpdateMessage(agent_update): AgentUpdateMessage, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, MultiAgentUpdateMessage(agent_updates): MultiAgentUpdateMessage, _ctx: &mut Self::Context) -> Self::Result {
         let pre_handle_agents_count = self.count_agents();
 
-        let agent_alignment_fut = self.align_agents_simulation_state(&agent_update);
-        let send_metrics_fut = self.metrics_storage.send(AgentUpdateMessage(agent_update));
+        let agent_alignment_fut = self.align_agents_simulation_state(&agent_updates);
+        let send_metrics_fut = self.metrics_storage.send(MultiAgentUpdateMessage(agent_updates));
 
         let post_handle_agents_count = self.count_agents();
 
         let cmd_fut = if pre_handle_agents_count != post_handle_agents_count {
-            Some(self.send_broadcast(Command::UpdateAgentsCount(post_handle_agents_count as u32)))
+            Some(self.send_broadcast(vec![Command::UpdateAgentsCount(post_handle_agents_count as u32)]))
         } else {
             None
         };
@@ -83,26 +82,29 @@ impl ControllerActor {
         self.agents_state.len()
     }
 
-    fn send_to_agent(&mut self, agent_id: u64, command: Command) -> RecipientRequest<ControllerCommandMessage> {
+    fn send_to_agent(&mut self, agent_id: u64, commands: Vec<Command>) -> RecipientRequest<ControllerCommandMessage> {
         self.command_sender.send(ControllerCommandMessage(ControllerCommand {
-            command: Some(command),
+            commands: commands.into_iter().map(|cmd| CommandItem { command: Some(cmd) }).collect(),
             target: Some(Target::AgentId(agent_id)),
         }))
     }
 
-    fn send_broadcast(&self, command: Command) -> RecipientRequest<ControllerCommandMessage> {
+    fn send_to_agents(&mut self, agent_ids: Vec<u64>, commands: Vec<Command>) -> RecipientRequest<ControllerCommandMessage> {
         self.command_sender.send(ControllerCommandMessage(ControllerCommand {
-            command: Some(command),
+            commands: commands.into_iter().map(|cmd| CommandItem { command: Some(cmd) }).collect(),
+            target: Some(Target::Agents(MultiAgent { agent_ids })),
+        }))
+    }
+
+    fn send_broadcast(&self, commands: Vec<Command>) -> RecipientRequest<ControllerCommandMessage> {
+        self.command_sender.send(ControllerCommandMessage(ControllerCommand {
+            commands: commands.into_iter().map(|cmd| CommandItem { command: Some(cmd) }).collect(),
             target: Some(Target::Group(AgentGroup::All.into())),
         }))
     }
 
-    fn broadcast_simulation_state(&mut self) -> impl Future<Output=Result<Vec<()>, MailboxError>> {
-        let recipient_reqs = self.generate_simulation_state_commands()
-            .into_iter()
-            .map(|cmd| self.send_broadcast(cmd));
-
-        try_join_all(recipient_reqs)
+    fn broadcast_simulation_state(&mut self) -> RecipientRequest<ControllerCommandMessage> {
+        self.send_broadcast(self.generate_simulation_state_commands())
     }
 
     fn misaligned_agents(&self) -> HashMap<u64, AgentState> {
@@ -112,14 +114,16 @@ impl ControllerActor {
             .collect::<HashMap<_, _>>()
     }
 
-    fn align_agents_simulation_state(&mut self, update: &AgentUpdate) -> impl Future<Output=()> {
-        if let Some(timestamp) = update.timestamp.clone().map(SystemTime::try_from).transpose().ok().flatten() {
-            let entry = self.agents_state.entry(update.agent_id)
-                .or_insert(AgentState { timestamp, state: update.state() });
+    fn align_agents_simulation_state(&mut self, updates: &[AgentUpdate]) -> impl Future<Output=()> {
+        for update in updates {
+            if let Some(timestamp) = update.timestamp.clone().map(SystemTime::try_from).transpose().ok().flatten() {
+                let entry = self.agents_state.entry(update.agent_id)
+                    .or_insert(AgentState { timestamp, state: update.state() });
 
-            if entry.timestamp < timestamp {
-                entry.timestamp = timestamp;
-                entry.state = update.state();
+                if entry.timestamp < timestamp {
+                    entry.timestamp = timestamp;
+                    entry.state = update.state();
+                }
             }
         }
         self.agents_state.retain(|_id, state| state.timestamp.add(Duration::from_secs(60)) > SystemTime::now());
@@ -127,15 +131,15 @@ impl ControllerActor {
         let misaligned = self.misaligned_agents();
         let commands = self.generate_simulation_state_commands();
 
-        let send_futures = misaligned.into_iter()
-            .flat_map(|(agent_id, _)| commands.iter().map(move |c| (agent_id, c)))
-            .map(|(agent_id, cmd)| self.send_to_agent(agent_id, cmd.clone()))
-            .collect::<Vec<_>>();
+        let maybe_send_fut = if misaligned.is_empty() {
+            None
+        } else {
+            Some(self.send_to_agents(misaligned.keys().cloned().collect(), commands))
+        };
 
         async move {
-            let results = join_all(send_futures).await;
-            for res in results {
-                if let Err(err) = res {
+            if let Some(send_fut) = maybe_send_fut {
+                if let Err(err) = send_fut.await {
                     log::error!("Error aligning simulation state - {err}");
                 }
             }
@@ -143,10 +147,15 @@ impl ControllerActor {
     }
 
     fn generate_simulation_state_commands(&self) -> Vec<Command> {
+        let agents_count = self.count_agents();
         match &self.simulation {
-            SimulationState::Idle => vec![Command::Stop(StopCommand { reset: true })],
+            SimulationState::Idle => vec![
+                Command::Stop(StopCommand { reset: true }),
+                Command::UpdateAgentsCount(agents_count as u32),
+            ],
             SimulationState::Ready { simulation } => vec![
                 Command::Stop(StopCommand { reset: true }),
+                Command::UpdateAgentsCount(agents_count as u32),
                 Command::Load(LoadSimCommand {
                     clients_evolution: simulation.users.iter()
                         .cloned().map(Into::into)
@@ -156,6 +165,7 @@ impl ControllerActor {
             ],
             SimulationState::Launched { start_ts, simulation, } => vec![
                 Command::Stop(StopCommand { reset: true }),
+                Command::UpdateAgentsCount(agents_count as u32),
                 Command::Load(LoadSimCommand {
                     clients_evolution: simulation.users.iter()
                         .cloned().map(Into::into)

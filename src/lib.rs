@@ -3,7 +3,7 @@
 //!
 pub use communication::grpc;
 pub use communication::server;
-pub use communication::notifier_actor::AgentUpdateMessage;
+pub use communication::message::MultiAgentUpdateMessage;
 
 mod communication;
 pub mod agent;

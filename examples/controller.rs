@@ -12,8 +12,9 @@ use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 use tonic::transport::Server;
-use hailstorm::grpc::{self, AgentGroup, AgentMessage, AgentUpdate, ClientDistribution, ControllerCommand, LaunchCommand, LoadSimCommand};
-use hailstorm::grpc::controller_command::{Command, Target};
+use hailstorm::grpc::{self, AgentGroup, AgentMessage, AgentUpdate, ClientDistribution, CommandItem, ControllerCommand, LaunchCommand, LoadSimCommand};
+use hailstorm::grpc::controller_command::Target;
+use hailstorm::grpc::command_item::Command;
 use hailstorm::grpc::hailstorm_service_server::HailstormService;
 
 pub struct EchoHailstormServer {
@@ -41,11 +42,13 @@ async fn initialize_agents(
     sender: Sender<ControllerCommand>
 ) {
     actix::clock::sleep(Duration::from_secs(5)).await;
-    sender.send(ControllerCommand { target: Some(Target::Group(AgentGroup::All.into())), command: Some(load_command.clone()) }).await.expect("Error sending load command");
     sender.send(ControllerCommand {
         target: Some(Target::Group(AgentGroup::All.into())),
-        command: Some(Command::Launch(LaunchCommand { start_ts: Some(start_ts.into()) }))
-    }).await.expect("Error sending launch command");
+        commands: vec![
+            CommandItem { command: Some(load_command.clone()) },
+            CommandItem { command: Some(Command::Launch(LaunchCommand { start_ts: Some(start_ts.into()) })) }
+        ],
+    }).await.expect("Error sending load command");
 }
 
 async fn handle_messages(mut msg_stream: Streaming<AgentMessage>, sender: Sender<ControllerCommand>) {
@@ -84,7 +87,9 @@ async fn handle_messages(mut msg_stream: Streaming<AgentMessage>, sender: Sender
                 if prev_agent_count != registered_agents.len() {
                     sender.send(ControllerCommand {
                         target: Some(Target::Group(AgentGroup::All.into())),
-                        command: Some(Command::UpdateAgentsCount(registered_agents.len() as u32))
+                        commands: vec![
+                            CommandItem { command: Some(Command::UpdateAgentsCount(registered_agents.len() as u32)) }
+                        ]
                     }).await.expect("Error sending UpdateAgentsCount")
                 }
             }

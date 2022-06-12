@@ -2,7 +2,7 @@ use std::future::ready;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
-use actix::{Actor, ActorFutureExt, ActorTryFutureExt, Addr, AsyncContext, Context, Handler, StreamHandler, WrapFuture};
+use actix::{Actor, ActorFutureExt, ActorTryFutureExt, Addr, AsyncContext, Context, Handler, ResponseFuture, WrapFuture};
 use futures::future::ok;
 use futures::StreamExt;
 use rand::{Rng, thread_rng};
@@ -11,12 +11,12 @@ use tonic::Streaming;
 
 use crate::communication::grpc::{AgentMessage, AgentUpdate, ControllerCommand};
 use crate::communication::message::ControllerCommandMessage;
-use crate::communication::notifier_actor::{AgentUpdateMessage, RegisterAgentUpdateSender, UpdatesNotifierActor};
+use crate::communication::notifier_actor::{RegisterAgentUpdateSender, UpdatesNotifierActor};
 use crate::communication::server_actor::GrpcServerActor;
-use crate::grpc;
-use crate::grpc::controller_command::Command;
+use crate::{grpc, MultiAgentUpdateMessage};
+use crate::grpc::command_item::Command;
 use crate::grpc::StopCommand;
-use crate::simulation::simulation_actor::{ClientStats, FetchSimulationStats, SimulationActor, SimulationCommand, SimulationState, SimulationStats};
+use crate::simulation::simulation_actor::{ClientStats, FetchSimulationStats, SimulationActor, SimulationCommand, SimulationCommandLst, SimulationState, SimulationStats};
 use crate::simulation::user_actor::UserState;
 
 struct AggregatedUserStateMetric {
@@ -78,7 +78,7 @@ impl AgentCoreActor {
                     .map(Into::into)
                     .collect();
 
-                notifier_addr.try_send(AgentUpdateMessage(AgentUpdate {
+                notifier_addr.try_send(MultiAgentUpdateMessage(vec![AgentUpdate {
                     agent_id,
                     stats,
                     update_id: thread_rng().gen(),
@@ -86,16 +86,16 @@ impl AgentCoreActor {
                     name: "".to_string(),
                     state: state as i32,
                     simulation_id: "".to_string(),
-                })).unwrap_or_else(|err| {
+                }])).unwrap_or_else(|err| {
                     log::error!("Error sending agent stats to notifier actor {err}");
                 });
 
                 ok(())
             }).map(|res, _act, _ctx| {
-                if let Err(err) = res {
-                    log::error!("Error sending agent stats {err}");
-                }
-            });
+            if let Err(err) = res {
+                log::error!("Error sending agent stats {err}");
+            }
+        });
 
         ctx.spawn(fut);
     }
@@ -103,7 +103,6 @@ impl AgentCoreActor {
     fn update_simulation_stats(&mut self, stats: Vec<ClientStats>, timestamp: SystemTime) -> Vec<ClientStats> {
         stats.into_iter()
             .map(|mut client| {
-
                 self.last_sent_metrics.iter()
                     .filter(|m| m.model.eq(&client.model) && !client.count_by_state.contains_key(&m.state))
                     .collect::<Vec<_>>().into_iter()
@@ -125,7 +124,7 @@ impl AgentCoreActor {
                                 timestamp,
                                 model: client.model.clone(),
                                 state: *state,
-                                count: *count
+                                count: *count,
                             });
                             true
                         }
@@ -159,7 +158,8 @@ impl Handler<RegisterAgentClientMsg> for AgentCoreActor {
         self.notifier_addr
             .try_send(RegisterAgentUpdateSender(msg.msg_sender))
             .unwrap_or_else(|err| log::error!("Error registering agent update sender - {err:?}"));
-        ctx.add_stream(
+
+        ctx.add_message_stream(
             msg.cmd_stream
                 .filter_map(move |result|
                     ready(
@@ -199,26 +199,32 @@ impl From<&Command> for Option<SimulationCommand> {
     }
 }
 
-impl StreamHandler<ConnectedClientMessage> for AgentCoreActor {
-    fn handle(&mut self, ConnectedClientMessage { message, .. }: ConnectedClientMessage, _ctx: &mut Self::Context) {
+impl Handler<ConnectedClientMessage> for AgentCoreActor {
+    type Result = ResponseFuture<()>;
+
+    fn handle(&mut self, ConnectedClientMessage { message, .. }: ConnectedClientMessage, _ctx: &mut Self::Context) -> Self::Result {
         log::debug!("message: {message:?}");
-        let maybe_sim_command: Option<SimulationCommand> = message.command.as_ref()
-            .and_then(From::from);
+        let sim_commands: Vec<SimulationCommand> = message.commands.iter()
+            .filter_map(|ci| ci.command.as_ref())
+            .filter_map(From::from)
+            .collect();
 
-        if let Some(sim_command) = maybe_sim_command {
-            self.simulation_addr.try_send(sim_command)
-                .unwrap_or_else(|err| log::error!("Error sending simulation command - {err}"));
-        }
+        let sim_addr = self.simulation_addr.clone();
+        let server_addr = self.server_addr.clone();
+        let agent_id = self.agent_id;
 
-        self.server_addr.try_send(ControllerCommandMessage(message))
-            .unwrap_or_else(|err| log::error!("Error sending command to server actor - {err}"));
-    }
+        Box::pin(async move {
+            if message.target.as_ref().map(|t| t.includes_agent(agent_id)).unwrap_or(true) {
+                let sim_cmd_out = sim_addr.send(SimulationCommandLst { commands: sim_commands }).await;
+                if let Err(err) = sim_cmd_out {
+                    log::error!("Error sending simulation command - {err}");
+                }
+            }
 
-    fn started(&mut self, _ctx: &mut Self::Context) {
-        log::debug!("ConnectedAgentMessage stream handler started")
-    }
-
-    fn finished(&mut self, _ctx: &mut Self::Context) {
-        log::debug!("ConnectedAgentMessage stream handler finished")
+            let srv_out = server_addr.send(ControllerCommandMessage(message)).await;
+            if let Err(err) = srv_out {
+                log::error!("Error sending command to server actor - {err}");
+            }
+        })
     }
 }

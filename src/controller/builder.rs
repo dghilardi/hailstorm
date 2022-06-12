@@ -3,13 +3,13 @@ use actix::{Addr, AsyncContext, Context, Recipient};
 use tonic::transport::Server;
 use tonic::transport::server::Router;
 use crate::communication::grpc;
-use crate::communication::notifier_actor::AgentUpdateMessage;
 use crate::communication::server::HailstormGrpcServer;
 use crate::communication::server_actor::GrpcServerActor;
 use crate::controller::controller_actor::ControllerActor;
+use crate::MultiAgentUpdateMessage;
 
 pub struct ControllerBuilder {
-    pub metrics_storage: Recipient<AgentUpdateMessage>,
+    pub metrics_storage: Recipient<MultiAgentUpdateMessage>,
 }
 
 impl ControllerBuilder {

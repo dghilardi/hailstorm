@@ -41,16 +41,25 @@ enum AgentGroup {
 }
 
 message ControllerCommand {
+  oneof target {
+    AgentGroup group = 1;
+    uint64 agent_id = 2;
+    MultiAgent agents = 3;
+  }
+  repeated CommandItem commands = 10;
+}
+
+message CommandItem {
   oneof command {
     LoadSimCommand load = 1;
     LaunchCommand launch = 2;
     uint32 updateAgentsCount = 3;
     StopCommand stop = 4;
   }
-  oneof target {
-    AgentGroup group = 10;
-    uint64 agent_id = 11;
-  }
+}
+
+message MultiAgent {
+  repeated uint64 agent_ids = 1;
 }
 
 message LaunchCommand {

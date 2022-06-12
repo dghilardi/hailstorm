@@ -150,8 +150,6 @@ impl Handler<UserStateChange> for SimulationActor {
     }
 }
 
-#[derive(Message)]
-#[rtype(result = "()")]
 pub enum SimulationCommand {
     LoadSimulation {
         model_shapes: HashMap<String, String>,
@@ -168,34 +166,42 @@ pub enum SimulationCommand {
     }
 }
 
-impl Handler<SimulationCommand> for SimulationActor {
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct SimulationCommandLst {
+    pub commands: Vec<SimulationCommand>
+}
+
+impl Handler<SimulationCommandLst> for SimulationActor {
     type Result = ();
 
-    fn handle(&mut self, msg: SimulationCommand, _ctx: &mut Self::Context) -> Self::Result {
-        match msg {
-            SimulationCommand::LoadSimulation { model_shapes, script } => {
-                let model_registration_out = model_shapes
-                    .into_iter()
-                    .map(|(model, shape)| self.register_model(model, shape))
-                    .collect::<Result<Vec<_>, _>>();
+    fn handle(&mut self, msg: SimulationCommandLst, _ctx: &mut Self::Context) -> Self::Result {
+        for cmd in msg.commands {
+            match cmd {
+                SimulationCommand::LoadSimulation { model_shapes, script } => {
+                    let model_registration_out = model_shapes
+                        .into_iter()
+                        .map(|(model, shape)| self.register_model(model, shape))
+                        .collect::<Result<Vec<_>, _>>();
 
-                if let Err(err) = model_registration_out {
-                    log::error!("Error registering simulation clients - {err}")
+                    if let Err(err) = model_registration_out {
+                        log::error!("Error registering simulation clients - {err}")
+                    }
+
+                    self.user_registry = Some(UserRegistry::new(&script).expect("Error parsing script"));
                 }
-
-                self.user_registry = Some(UserRegistry::new(&script).expect("Error parsing script"));
-            }
-            SimulationCommand::LaunchSimulation { start_ts } => {
-                self.start_ts = Some(start_ts);
-            }
-            SimulationCommand::UpdateAgentsCount { count } => {
-                self.agents_count = count;
-            }
-            SimulationCommand::StopSimulation { reset } => {
-                self.start_ts = None;
-                if reset {
-                    self.user_registry = None;
-                    self.model_shapes.clear();
+                SimulationCommand::LaunchSimulation { start_ts } => {
+                    self.start_ts = Some(start_ts);
+                }
+                SimulationCommand::UpdateAgentsCount { count } => {
+                    self.agents_count = count;
+                }
+                SimulationCommand::StopSimulation { reset } => {
+                    self.start_ts = None;
+                    if reset {
+                        self.user_registry = None;
+                        self.model_shapes.clear();
+                    }
                 }
             }
         }
