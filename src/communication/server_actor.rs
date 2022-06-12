@@ -1,20 +1,19 @@
 use std::collections::HashMap;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
-use actix::{Actor, Addr, AsyncContext, Context, Handler, StreamHandler};
+use actix::{Actor, Addr, AsyncContext, Context, Handler, Recipient, ResponseFuture, StreamHandler};
 use futures::future::ready;
 use futures::StreamExt;
 use rand::{RngCore, thread_rng};
 use crate::communication::downstream_agent_actor::DownstreamAgentActor;
 use crate::communication::grpc::AgentMessage;
 use crate::communication::message::ControllerCommandMessage;
-use crate::communication::notifier_actor::{AgentUpdateMessage, UpdatesNotifierActor};
+use crate::communication::notifier_actor::AgentUpdateMessage;
 use crate::grpc::controller_command::Target;
 use crate::server::RegisterConnectedAgentMsg;
 
 struct ConnectedAgent {
     last_received_update: SystemTime,
-    agent_id: u64,
 }
 
 struct DownstreamConnection {
@@ -22,25 +21,25 @@ struct DownstreamConnection {
     sender: Addr<DownstreamAgentActor>,
 }
 
-pub struct AgentServerActor {
-    updater_addr: Addr<UpdatesNotifierActor>,
+pub struct GrpcServerActor {
+    agent_update_recipient: Recipient<AgentUpdateMessage>,
     downstream_agents: HashMap<u64, DownstreamConnection>,
 }
 
-impl Actor for AgentServerActor {
+impl Actor for GrpcServerActor {
     type Context = Context<Self>;
 }
 
-impl AgentServerActor {
-    pub fn new(updater_addr: Addr<UpdatesNotifierActor>) -> Self {
+impl GrpcServerActor {
+    pub fn new(agent_update_recipient: Recipient<AgentUpdateMessage>) -> Self {
         Self {
-            updater_addr,
+            agent_update_recipient,
             downstream_agents: Default::default(),
         }
     }
 }
 
-impl Handler<RegisterConnectedAgentMsg> for AgentServerActor {
+impl Handler<RegisterConnectedAgentMsg> for GrpcServerActor {
     type Result = ();
 
     fn handle(&mut self, msg: RegisterConnectedAgentMsg, ctx: &mut Self::Context) -> Self::Result {
@@ -72,7 +71,7 @@ pub struct ConnectedAgentMessage {
     message: AgentMessage,
 }
 
-impl StreamHandler<ConnectedAgentMessage> for AgentServerActor {
+impl StreamHandler<ConnectedAgentMessage> for GrpcServerActor {
     fn handle(&mut self, ConnectedAgentMessage { connection_id, message }: ConnectedAgentMessage, _ctx: &mut Self::Context) {
         let connection = self.downstream_agents.get_mut(&connection_id).expect("Connection not defined");
         for update_item in message.updates {
@@ -81,13 +80,13 @@ impl StreamHandler<ConnectedAgentMessage> for AgentServerActor {
                 .unwrap_or_else(SystemTime::now);
 
             let agent_entry = connection.agent_ids.entry(update_item.agent_id)
-                .or_insert(ConnectedAgent { last_received_update: timestamp, agent_id: update_item.agent_id });
+                .or_insert(ConnectedAgent { last_received_update: timestamp });
 
             if timestamp > agent_entry.last_received_update {
                 agent_entry.last_received_update = timestamp;
             }
 
-            self.updater_addr
+            self.agent_update_recipient
                 .try_send(AgentUpdateMessage(update_item))
                 .unwrap_or_else(|err| log::error!("Error sending update message {err:?}"));
         }
@@ -105,8 +104,8 @@ impl StreamHandler<ConnectedAgentMessage> for AgentServerActor {
     }
 }
 
-impl Handler<ControllerCommandMessage> for AgentServerActor {
-    type Result = ();
+impl Handler<ControllerCommandMessage> for GrpcServerActor {
+    type Result = ResponseFuture<()>;
 
     fn handle(&mut self, ControllerCommandMessage(msg): ControllerCommandMessage, _ctx: &mut Self::Context) -> Self::Result {
         let connections = self.downstream_agents.values()
@@ -114,11 +113,21 @@ impl Handler<ControllerCommandMessage> for AgentServerActor {
                 None => true,
                 Some(Target::Group(_)) => true,
                 Some(Target::AgentId(agent_id)) => conn.agent_ids.contains_key(&agent_id),
-            });
+            })
+            .map(|da| da.sender.clone())
+            .collect::<Vec<_>>();
 
-        for downstream_agent in connections {
-            downstream_agent.sender.try_send(ControllerCommandMessage(msg.clone()))
-                .unwrap_or_else(|err| log::error!("Error sending command to downstream agent client {err}"))
+        if connections.is_empty() {
+            log::warn!("No connection available for target {:?}", msg.target);
         }
+
+        Box::pin(async move {
+            for downstream_agent in connections {
+                let send_out = downstream_agent.send(ControllerCommandMessage(msg.clone())).await;
+                if let Err(err) = send_out {
+                    log::error!("Error sending command to downstream agent client {err}");
+                }
+            }
+        })
     }
 }

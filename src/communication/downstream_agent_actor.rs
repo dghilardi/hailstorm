@@ -1,10 +1,10 @@
-use actix::{Actor, Context, Handler};
+use actix::{Actor, Context, Handler, ResponseFuture};
 use tokio::sync::mpsc::Sender;
 use crate::communication::grpc::ControllerCommand;
 use crate::communication::message::ControllerCommandMessage;
 
 pub struct DownstreamAgentActor {
-    cmd_sender: Sender<ControllerCommand>
+    cmd_sender: Sender<ControllerCommand>,
 }
 
 impl Actor for DownstreamAgentActor {
@@ -20,10 +20,15 @@ impl DownstreamAgentActor {
 }
 
 impl Handler<ControllerCommandMessage> for DownstreamAgentActor {
-    type Result = ();
+    type Result = ResponseFuture<()>;
 
     fn handle(&mut self, ControllerCommandMessage(msg): ControllerCommandMessage, _ctx: &mut Self::Context) -> Self::Result {
-        self.cmd_sender.try_send(msg)
-            .unwrap_or_else(|err| log::error!("Error sending command downstream {err}"))
+        let sender = self.cmd_sender.clone();
+        Box::pin(async move {
+            let send_out = sender.send(msg).await;
+            if let Err(err) = send_out {
+                log::error!("Error sending command downstream {err}");
+            }
+        })
     }
 }

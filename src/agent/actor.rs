@@ -12,7 +12,7 @@ use tonic::Streaming;
 use crate::communication::grpc::{AgentMessage, AgentUpdate, ControllerCommand};
 use crate::communication::message::ControllerCommandMessage;
 use crate::communication::notifier_actor::{AgentUpdateMessage, RegisterAgentUpdateSender, UpdatesNotifierActor};
-use crate::communication::server_actor::AgentServerActor;
+use crate::communication::server_actor::GrpcServerActor;
 use crate::grpc;
 use crate::grpc::controller_command::Command;
 use crate::grpc::StopCommand;
@@ -29,7 +29,7 @@ struct AggregatedUserStateMetric {
 pub struct AgentCoreActor {
     agent_id: u64,
     notifier_addr: Addr<UpdatesNotifierActor>,
-    server_addr: Addr<AgentServerActor>,
+    server_addr: Addr<GrpcServerActor>,
     simulation_addr: Addr<SimulationActor>,
     last_sent_metrics: Vec<AggregatedUserStateMetric>,
 }
@@ -38,7 +38,7 @@ impl AgentCoreActor {
     pub fn new(
         agent_id: u64,
         notifier_addr: Addr<UpdatesNotifierActor>,
-        server_addr: Addr<AgentServerActor>,
+        server_addr: Addr<GrpcServerActor>,
         simulation_addr: Addr<SimulationActor>,
     ) -> Self {
         Self {
