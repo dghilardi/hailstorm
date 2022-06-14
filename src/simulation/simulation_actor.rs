@@ -26,7 +26,7 @@ impl SimulationUser {
 pub struct SimulationActor {
     agent_id: u64,
     start_ts: Option<SystemTime>,
-    user_registry: Option<UserRegistry>,
+    user_registry: UserRegistry,
     agents_count: u32,
     model_shapes: HashMap<String, Box<dyn Fn(f64) -> f64>>,
     sim_users: HashMap<String, HashMap<u64, SimulationUser>>,
@@ -41,11 +41,11 @@ impl Actor for SimulationActor {
 }
 
 impl SimulationActor {
-    pub fn new(agent_id: u64) -> Self {
+    pub fn new(agent_id: u64, user_registry: UserRegistry) -> Self {
         Self {
             agent_id,
             start_ts: None,
-            user_registry: None,
+            user_registry,
             agents_count: 1,
             model_shapes: Default::default(),
             sim_users: Default::default(),
@@ -101,8 +101,6 @@ impl SimulationActor {
                         for _idx in 0..(count - running_count) {
                             let usr_id = rng.next_u64();
                             let user_behaviour = self.user_registry
-                                .as_ref()
-                                .expect("Script not defined")
                                 .build_user(model);
 
                             users.insert(usr_id, SimulationUser {
@@ -188,7 +186,10 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                         log::error!("Error registering simulation clients - {err}")
                     }
 
-                    self.user_registry = Some(UserRegistry::new(&script).expect("Error parsing script"));
+                    let load_script_out = self.user_registry.load_script(&script);
+                    if let Err(err) = load_script_out {
+                        log::error!("Error loading script - {err}");
+                    }
                 }
                 SimulationCommand::LaunchSimulation { start_ts } => {
                     self.start_ts = Some(start_ts);
@@ -199,7 +200,7 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                 SimulationCommand::StopSimulation { reset } => {
                     self.start_ts = None;
                     if reset {
-                        self.user_registry = None;
+                        self.user_registry.reset_script();
                         self.model_shapes.clear();
                     }
                 }
@@ -237,11 +238,11 @@ impl Handler<FetchSimulationStats> for SimulationActor {
     type Result = SimulationStats;
 
     fn handle(&mut self, _msg: FetchSimulationStats, _ctx: &mut Self::Context) -> Self::Result {
-        let state = match (self.start_ts.as_ref(), self.user_registry.as_ref()) {
-            (_, None) => SimulationState::Idle,
-            (None, Some(_)) => SimulationState::Ready,
-            (Some(ts), Some(_)) if *ts < SystemTime::now() => SimulationState::Running,
-            (Some(_), Some(_)) => SimulationState::Waiting,
+        let state = match (self.start_ts.as_ref(), self.user_registry.has_registered_models()) {
+            (_, false) => SimulationState::Idle,
+            (None, true) => SimulationState::Ready,
+            (Some(ts), true) if *ts < SystemTime::now() => SimulationState::Running,
+            (Some(_), true) => SimulationState::Waiting,
         };
 
         let stats = self.sim_users.iter()

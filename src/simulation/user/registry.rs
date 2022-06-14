@@ -7,11 +7,12 @@ use rune::runtime::debug::DebugArgs;
 use rune::runtime::RuntimeContext;
 use crate::simulation::rune::user_mod;
 use crate::simulation::rune::user_mod::UserBehaviour;
-use crate::simulation::user::error::UserError;
+use crate::simulation::user::error::{LoadScriptError, UserError};
 
 #[derive(Debug)]
 pub struct UserRegistry {
     user_types: HashMap<String, UserBehaviour>,
+    context: Context,
     runtime: Arc<RuntimeContext>,
     unit: Arc<Unit>,
 }
@@ -24,29 +25,35 @@ pub struct FunSignature {
 }
 
 impl UserRegistry {
-    pub fn new(script: &str) -> Result<Self, UserError> {
-        let mut context = Context::with_default_modules().unwrap();
-        context.install(&rune_modules::http::module(true)?)?;
-        context.install(&rune_modules::json::module(true)?)?;
+    pub fn new(mut context: Context) -> Result<Self, UserError> {
         context.install(&user_mod::module()?)?;
         let runtime = Arc::new(context.runtime());
 
+        Ok(Self {
+            user_types: Default::default(),
+            context,
+            runtime,
+            unit: Arc::new(Default::default())
+        })
+    }
+
+    pub fn load_script(&mut self, script: &str) -> Result<(), LoadScriptError> {
         let mut diagnostics = Diagnostics::new();
 
         let mut sources = Sources::new();
         sources.insert(Source::new("script", script));
 
         let unit = rune::prepare(&mut sources)
-            .with_context(&context)
+            .with_context(&self.context)
             .with_diagnostics(&mut diagnostics)
             .build()
             .map(Arc::new)
-            .map_err(|_| UserError::BuildError(format!("diagnostics: {diagnostics:?}")))?;
+            .map_err(|_| LoadScriptError::InvalidScript(format!("diagnostics: {diagnostics:?}")))?;
 
-        let mut vm = Vm::new(runtime.clone(), unit.clone());
+        let mut vm = Vm::new(self.runtime.clone(), unit.clone());
 
         let user_types = unit.debug_info()
-            .ok_or(UserError::NoDebugInfo)?
+            .ok_or(LoadScriptError::NoDebugInfo)?
             .functions
             .iter()
             .fold(HashMap::new(), |mut acc, (hash, dbg)| {
@@ -84,11 +91,19 @@ impl UserRegistry {
             })
             .collect::<HashMap<_, _>>();
 
-        Ok(Self {
-            user_types,
-            runtime,
-            unit,
-        })
+        self.unit = unit;
+        self.user_types = user_types;
+
+        Ok(())
+    }
+
+    pub fn reset_script(&mut self) {
+        self.user_types = Default::default();
+        self.unit = Arc::new(Default::default());
+    }
+
+    pub fn has_registered_models(&self) -> bool {
+        !self.user_types.is_empty()
     }
 
     pub fn build_user(&self, model: &str) -> Option<User> {
@@ -132,7 +147,8 @@ mod test {
 
     #[test]
     fn test_new_registry_creation() {
-        let registry = UserRegistry::new(r###"
+        let mut registry = UserRegistry::new(Context::with_default_modules().unwrap()).unwrap();
+        registry.load_script(r###"
         struct Demo { id }
         impl Demo {
             pub fn register_user(user) {
