@@ -111,7 +111,7 @@ impl Handler<EstablishConnection> for UpstreamAgentActor {
                 Ok((client, tx, cmd_stream.into_inner()))
             }.into_actor(act))
             .and_then(|(client, upd_sender, cmd_stream): (_, _, Streaming<ControllerCommand>), act, ctx| {
-                let (cmd_tx, _cmd_rx) = mpsc::channel(0);
+                let (cmd_tx, _cmd_rx) = mpsc::channel(1);
                 act.connection = Some(UpstreamConnection {
                     client,
                     upd_sender,
