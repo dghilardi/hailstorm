@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 use std::time::Duration;
-use actix::{Actor, AsyncContext, Context, Handler};
-use tokio::sync::mpsc::Sender;
+use actix::{Actor, AsyncContext, Context, Handler, Recipient};
 use crate::communication::grpc::{AgentMessage, AgentUpdate};
-use crate::communication::message::MultiAgentUpdateMessage;
+use crate::communication::message::{MultiAgentUpdateMessage, SendAgentMessage};
 
 #[derive(Default)]
 pub struct UpdatesNotifierActor {
     frames: HashMap<u64, AgentUpdate>,
-    connected_clients: Vec<Sender<AgentMessage>>,
+    connected_clients: Vec<Recipient<SendAgentMessage>>,
 }
 
 impl Actor for UpdatesNotifierActor {
@@ -33,7 +32,7 @@ impl UpdatesNotifierActor {
         };
 
         for client in self.connected_clients.iter() {
-            client.try_send(message.clone())
+            client.try_send(SendAgentMessage(message.clone()))
                 .unwrap_or_else(|err| log::error!("Error sending frames {err:?}"));
         }
     }
@@ -41,13 +40,13 @@ impl UpdatesNotifierActor {
 
 #[derive(actix::Message)]
 #[rtype(result = "()")]
-pub struct RegisterAgentUpdateSender(pub Sender<AgentMessage>);
+pub struct RegisterAgentUpdateSender(pub Recipient<SendAgentMessage>);
 
 impl Handler<RegisterAgentUpdateSender> for UpdatesNotifierActor {
     type Result = ();
 
-    fn handle(&mut self, msg: RegisterAgentUpdateSender, _ctx: &mut Self::Context) -> Self::Result {
-        self.connected_clients.push(msg.0);
+    fn handle(&mut self, RegisterAgentUpdateSender(msg): RegisterAgentUpdateSender, _ctx: &mut Self::Context) -> Self::Result {
+        self.connected_clients.push(msg);
     }
 }
 

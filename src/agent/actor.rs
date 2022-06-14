@@ -1,16 +1,14 @@
-use std::future::ready;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
-use actix::{Actor, ActorFutureExt, ActorTryFutureExt, Addr, AsyncContext, Context, Handler, ResponseFuture, WrapFuture};
+use actix::{Actor, ActorFutureExt, ActorTryFutureExt, Addr, AsyncContext, Context, Handler, Recipient, ResponseFuture, WrapFuture};
 use futures::future::ok;
 use futures::StreamExt;
 use rand::{Rng, thread_rng};
-use tokio::sync::mpsc::Sender;
-use tonic::Streaming;
+use tokio::sync::mpsc::Receiver;
 
-use crate::communication::grpc::{AgentMessage, AgentUpdate, ControllerCommand};
-use crate::communication::message::ControllerCommandMessage;
+use crate::communication::grpc::{AgentUpdate, ControllerCommand};
+use crate::communication::message::{ControllerCommandMessage, SendAgentMessage};
 use crate::communication::notifier_actor::{RegisterAgentUpdateSender, UpdatesNotifierActor};
 use crate::communication::server_actor::GrpcServerActor;
 use crate::{grpc, MultiAgentUpdateMessage};
@@ -147,8 +145,8 @@ impl Actor for AgentCoreActor {
 #[derive(actix::Message)]
 #[rtype(result = "()")]
 pub struct RegisterAgentClientMsg {
-    pub cmd_stream: Streaming<ControllerCommand>,
-    pub msg_sender: Sender<AgentMessage>,
+    pub cmd_receiver: Receiver<ControllerCommand>,
+    pub msg_sender: Recipient<SendAgentMessage>,
 }
 
 impl Handler<RegisterAgentClientMsg> for AgentCoreActor {
@@ -159,16 +157,10 @@ impl Handler<RegisterAgentClientMsg> for AgentCoreActor {
             .try_send(RegisterAgentUpdateSender(msg.msg_sender))
             .unwrap_or_else(|err| log::error!("Error registering agent update sender - {err:?}"));
 
+        let cmd_stream = tokio_stream::wrappers::ReceiverStream::new(msg.cmd_receiver);
         ctx.add_message_stream(
-            msg.cmd_stream
-                .filter_map(move |result|
-                    ready(
-                        result
-                            .map(|message| ConnectedClientMessage { message })
-                            .map_err(|err| log::error!("Error during stream processing {err}"))
-                            .ok()
-                    )
-                )
+            cmd_stream
+                .map(move |message| ConnectedClientMessage { message })
         );
     }
 }
