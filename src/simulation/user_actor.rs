@@ -6,6 +6,7 @@ use crate::simulation::user::registry::User;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub enum UserState {
+    Initializing,
     Running,
     Stopping,
     Stopped,
@@ -15,9 +16,10 @@ pub enum UserState {
 impl From<UserState> for u32 {
     fn from(state: UserState) -> Self {
         match state {
-            UserState::Running => 0,
-            UserState::Stopping => 1,
-            UserState::Stopped => 2,
+            UserState::Initializing => 0,
+            UserState::Running => 1,
+            UserState::Stopping => 2,
+            UserState::Stopped => 3,
             UserState::Custom(cst) => 100 + cst,
         }
     }
