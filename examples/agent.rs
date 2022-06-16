@@ -40,7 +40,7 @@ async fn main() {
             .to_socket_addrs().unwrap().next().unwrap(),
         upstream: config.upstream
             .unwrap_or_default(),
-        rune_context: rune::Context::with_default_modules()
+        rune_context_builder: |_sim| rune::Context::with_default_modules()
             .expect("Error loading default rune modules"),
     }.launch().await;
 }

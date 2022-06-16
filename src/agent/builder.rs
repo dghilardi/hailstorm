@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use actix::Actor;
+use actix::{Actor, Addr, AsyncContext, Context};
 use futures::future::try_join_all;
 use tonic::transport::Server;
 use crate::agent::actor::AgentCoreActor;
@@ -12,20 +12,26 @@ use crate::communication::server_actor::GrpcServerActor;
 use crate::simulation::simulation_actor::SimulationActor;
 use crate::simulation::user::registry::UserRegistry;
 
-pub struct AgentBuilder {
+pub struct AgentBuilder <ContextBuilder> {
     pub agent_id: u64,
     pub address: SocketAddr,
     pub upstream: HashMap<String, String>,
-    pub rune_context: rune::Context,
+    pub rune_context_builder: ContextBuilder,
 }
 
-impl AgentBuilder {
+impl <ContextBuilder> AgentBuilder<ContextBuilder>
+where
+    ContextBuilder: FnOnce(Addr<SimulationActor>) -> rune::Context,
+{
     pub async fn launch(self) {
-        let user_registry = UserRegistry::new(self.rune_context).expect("Error during registry construction");
+        let simulation_ctx: Context<SimulationActor> = Context::new();
+
+        let rune_context = (self.rune_context_builder)(simulation_ctx.address());
+        let user_registry = UserRegistry::new(rune_context).expect("Error during registry construction");
 
         let updater_addr = UpdatesNotifierActor::create(|_| UpdatesNotifierActor::new());
         let server_actor = GrpcServerActor::create(|_| GrpcServerActor::new(updater_addr.clone().recipient()));
-        let simulation_actor = SimulationActor::create(|_| SimulationActor::new(self.agent_id, user_registry));
+        let simulation_actor = simulation_ctx.run(SimulationActor::new(self.agent_id, user_registry));
         let core_addr = AgentCoreActor::create(|_| AgentCoreActor::new(
             self.agent_id,
             updater_addr.clone(),

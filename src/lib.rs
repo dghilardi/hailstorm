@@ -7,5 +7,5 @@ pub use communication::message::MultiAgentUpdateMessage;
 
 mod communication;
 pub mod agent;
-mod simulation;
+pub mod simulation;
 pub mod controller;
