@@ -1,6 +1,6 @@
 use std::time::Duration;
 use rand::{Rng, thread_rng};
-use rune::{Any, ContextError, Hash, Module};
+use rune::{Any, Hash};
 use rune::runtime::{Function, Shared};
 
 #[derive(Clone, Debug, Any)]
@@ -27,14 +27,14 @@ impl Default for UserBehaviour {
 }
 
 impl UserBehaviour {
-    fn register_action(&mut self, weight: f32, action: Shared<Function>) {
+    pub fn register_action(&mut self, weight: f32, action: Shared<Function>) {
         let weight = weight.max(0f32);
         let hash = action.take().expect("Error extracting action hash").type_hash();
         self.total_weight += weight as f64;
         self.actions.push(UserAction { hash, weight });
     }
 
-    fn set_interval_millis(&mut self, interval: u64) {
+    pub fn set_interval_millis(&mut self, interval: u64) {
         self.interval = Duration::from_millis(interval);
     }
 
@@ -52,14 +52,4 @@ impl UserBehaviour {
     pub fn get_interval(&self) -> Duration {
         self.interval
     }
-}
-
-pub fn module() -> Result<Module, ContextError> {
-    let mut module = Module::with_crate_item("hailstorm", &["user"]);
-
-    module.ty::<UserBehaviour>()?;
-    module.inst_fn("register_action", UserBehaviour::register_action)?;
-    module.inst_fn("set_interval_millis", UserBehaviour::set_interval_millis)?;
-
-    Ok(module)
 }
