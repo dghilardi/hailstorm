@@ -4,6 +4,8 @@ use config::{Config, ConfigError, Environment, File};
 use rand::{RngCore, thread_rng};
 use serde::Deserialize;
 use hailstorm::agent::builder::AgentBuilder;
+use hailstorm::simulation::rune::extension;
+use hailstorm::simulation::rune::extension::env::EnvModuleConf;
 
 #[derive(Deserialize)]
 pub struct HailstormAgentConfig {
@@ -40,7 +42,12 @@ async fn main() {
             .to_socket_addrs().unwrap().next().unwrap(),
         upstream: config.upstream
             .unwrap_or_default(),
-        rune_context_builder: |_sim| rune::Context::with_default_modules()
-            .expect("Error loading default rune modules"),
+        rune_context_builder: |_sim| {
+            let mut ctx = rune::Context::with_default_modules().expect("Error loading default rune modules");
+            ctx.install(&extension::storage::module().expect("Error initializing storage extension module")).expect("Error loading storage extension module");
+            ctx.install(&extension::env::module(EnvModuleConf { prefix: Some(String::from("hsa")) }).expect("Error initializing env extension module")).expect("Error loading env extension module");
+
+            ctx
+        },
     }.launch().await;
 }

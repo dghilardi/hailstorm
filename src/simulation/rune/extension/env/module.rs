@@ -1,7 +1,7 @@
 use rune::{ContextError, Module};
 
 pub struct EnvModuleConf {
-    prefix: Option<String>
+    pub prefix: Option<String>
 }
 
 fn read_env(maybe_prefix: Option<&String>, name: &str) -> Option<String> {

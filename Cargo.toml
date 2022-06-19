@@ -28,6 +28,8 @@ rune = "0.10.3"
 rune-modules = { version = "0.10.3", features = ["http", "json"] }
 meval = "0.2.0"
 
+dashmap = "5.3.4"
+
 [dev-dependencies]
 serde = "1.0.137"
 config = "0.13.1"
