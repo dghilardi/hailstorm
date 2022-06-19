@@ -121,6 +121,14 @@ impl UserRegistry {
                 }
             })
     }
+
+    pub fn count_user_models(&self) -> usize {
+        self.user_types.len()
+    }
+
+    pub fn model_names(&self) -> Vec<String> {
+        self.user_types.keys().collect()
+    }
 }
 
 pub struct User {
@@ -130,6 +138,18 @@ pub struct User {
 }
 
 impl User {
+    pub(crate) fn new(
+        behaviour: UserBehaviour,
+        instance: Value,
+        vm: rune::Vm,
+    ) -> Self {
+        Self {
+            behaviour,
+            instance,
+            vm,
+        }
+    }
+
     pub fn get_interval(&self) -> Duration {
         self.behaviour.get_interval()
     }
