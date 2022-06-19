@@ -120,7 +120,7 @@ impl SimulationActor {
     }
 }
 
-#[derive(Message)]
+#[derive(Message, Debug)]
 #[rtype(result = "()")]
 pub struct UserStateChange {
     pub user_id: u64,

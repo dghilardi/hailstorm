@@ -1,10 +1,10 @@
 use std::time::Duration;
-use actix::{Actor, ActorContext, Addr, AsyncContext, AtomicResponse, Context, Handler, Message, WrapFuture, ActorFutureExt};
+use actix::{Actor, ActorContext, Addr, AsyncContext, AtomicResponse, Context, Handler, Message, WrapFuture, ActorFutureExt, Recipient};
 use rand::{Rng, thread_rng};
 use crate::simulation::simulation_actor::{SimulationActor, UserStateChange};
 use crate::simulation::user::registry::User;
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub enum UserState {
     Initializing,
     Running,
@@ -27,19 +27,22 @@ impl From<UserState> for u32 {
 
 pub struct UserActor {
     user_id: u64,
-    simulation_addr: Addr<SimulationActor>,
+    state_change_recipient: Recipient<UserStateChange>,
     user: Option<User>,
 }
 
 impl UserActor {
-    pub fn new(
+    pub fn new<A>(
         user_id: u64,
-        simulation_addr: Addr<SimulationActor>,
+        simulation_addr: Addr<A>,
         user: User,
-    ) -> Self {
+    ) -> Self
+    where A: Actor<Context = Context<A>>
+    + Handler<UserStateChange>
+    {
         Self {
             user_id,
-            simulation_addr,
+            state_change_recipient: simulation_addr.recipient(),
             user: Some(user),
         }
     }
@@ -59,7 +62,7 @@ impl Actor for UserActor {
 
     fn stopped(&mut self, _ctx: &mut Self::Context) {
         log::debug!("User actor stopped");
-        self.simulation_addr.try_send(UserStateChange {
+        self.state_change_recipient.try_send(UserStateChange {
             user_id: self.user_id,
             state: UserState::Stopped,
         }).unwrap_or_else(|e| log::error!("Error sending stopped user state - {e}"));
