@@ -8,6 +8,7 @@ use rune::runtime::RuntimeContext;
 use crate::simulation::rune::extension::user;
 use crate::simulation::rune::extension::user::UserBehaviour;
 use crate::simulation::user::error::{LoadScriptError, UserError};
+use crate::simulation::user::params::UserParams;
 
 #[derive(Debug)]
 pub struct UserRegistry {
@@ -106,12 +107,13 @@ impl UserRegistry {
         !self.user_types.is_empty()
     }
 
-    pub fn build_user(&self, model: &str) -> Option<User> {
+    pub fn build_user(&self, user_id: u32, model: &str) -> Option<User> {
         self.user_types
             .get(model)
             .map(|b| {
                 let mut vm = rune::Vm::new(self.runtime.clone(), self.unit.clone());
-                let instance = vm.call([model, "new"], ()).expect("Error construction");
+                let params = UserParams { user_id };
+                let instance = vm.call([model, "new"], (params,)).expect("Error construction");
                 User {
                     behaviour: b.clone(),
                     instance,

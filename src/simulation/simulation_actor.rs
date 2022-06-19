@@ -29,7 +29,7 @@ pub struct SimulationActor {
     user_registry: UserRegistry,
     agents_count: u32,
     model_shapes: HashMap<String, Box<dyn Fn(f64) -> f64>>,
-    sim_users: HashMap<String, HashMap<u64, SimulationUser>>,
+    sim_users: HashMap<String, HashMap<u32, SimulationUser>>,
 }
 
 impl Actor for SimulationActor {
@@ -99,9 +99,9 @@ impl SimulationActor {
                     Ordering::Greater => {
                         let mut rng = thread_rng();
                         for _idx in 0..(count - running_count) {
-                            let usr_id = rng.next_u64();
+                            let usr_id = rng.next_u32();
                             let user_behaviour = self.user_registry
-                                .build_user(model);
+                                .build_user(usr_id, model);
 
                             users.insert(usr_id, SimulationUser {
                                 state: UserState::Running,
@@ -123,7 +123,7 @@ impl SimulationActor {
 #[derive(Message, Debug)]
 #[rtype(result = "()")]
 pub struct UserStateChange {
-    pub user_id: u64,
+    pub user_id: u32,
     pub state: UserState,
 }
 
@@ -261,7 +261,7 @@ impl Handler<FetchSimulationStats> for SimulationActor {
     }
 }
 
-fn count_by_state(usr_map: &HashMap<u64, SimulationUser>) -> HashMap<UserState, usize> {
+fn count_by_state(usr_map: &HashMap<u32, SimulationUser>) -> HashMap<UserState, usize> {
     let mut group_by_state = HashMap::new();
 
     for usr in usr_map.values() {

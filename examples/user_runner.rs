@@ -48,7 +48,7 @@ async fn main() {
 
     let state_change_logger_actor = StateChangeLoggerActor::create(|_| StateChangeLoggerActor);
 
-    let user = registry.build_user(&args.model).expect(&format!("No user found with model {}", args.model));
+    let user = registry.build_user(1, &args.model).expect(&format!("No user found with model {}", args.model));
     let actor = UserActor::new(1, state_change_logger_actor, user);
     let _addr = actor.start();
 
