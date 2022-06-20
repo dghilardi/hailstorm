@@ -1,7 +1,6 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use dashmap::DashMap;
-use crate::simulation::rune::extension::storage::storage::UserStorage;
+use crate::simulation::rune::extension::storage::user_storage::UserStorage;
 
 pub struct StorageRegistry {
     storage: Arc<DashMap<(u32, String), String>>

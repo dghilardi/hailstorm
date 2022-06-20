@@ -8,6 +8,7 @@ use rune::runtime::RuntimeContext;
 use crate::simulation::rune::extension::user;
 use crate::simulation::rune::extension::user::UserBehaviour;
 use crate::simulation::user::error::{LoadScriptError, UserError};
+use crate::simulation::user::model_factory::UserModelFactory;
 use crate::simulation::user::params::UserParams;
 
 #[derive(Debug)]
@@ -34,7 +35,7 @@ impl UserRegistry {
             user_types: Default::default(),
             context,
             runtime,
-            unit: Arc::new(Default::default())
+            unit: Arc::new(Default::default()),
         })
     }
 
@@ -113,13 +114,32 @@ impl UserRegistry {
             .map(|b| {
                 let mut vm = rune::Vm::new(self.runtime.clone(), self.unit.clone());
                 let params = UserParams { user_id };
-                let instance = vm.call([model, "new"], (params,)).expect("Error construction");
+                let instance = vm.call([model, "new"], (params, )).expect("Error construction");
                 User {
                     behaviour: b.clone(),
                     instance,
                     vm,
                 }
             })
+    }
+
+    pub fn count_user_models(&self) -> usize {
+        self.user_types.len()
+    }
+
+    pub fn model_names(&self) -> Vec<&String> {
+        self.user_types.keys().collect()
+    }
+
+    pub fn build_factory(&self, model: &str) -> Option<UserModelFactory> {
+        self.user_types.get(model).map(|b|
+            UserModelFactory {
+                model: model.to_string(),
+                behaviour: b.clone(),
+                runtime: self.runtime.clone(),
+                unit: self.unit.clone(),
+            }
+        )
     }
 }
 
@@ -130,13 +150,25 @@ pub struct User {
 }
 
 impl User {
+    pub(crate) fn new(
+        behaviour: UserBehaviour,
+        instance: Value,
+        vm: rune::Vm,
+    ) -> Self {
+        Self {
+            behaviour,
+            instance,
+            vm,
+        }
+    }
+
     pub fn get_interval(&self) -> Duration {
         self.behaviour.get_interval()
     }
 
     pub async fn run_random_action(&mut self) {
         let action_hash = self.behaviour.random_action();
-        let action_out = self.vm.async_call(action_hash, (&self.instance,)).await;
+        let action_out = self.vm.async_call(action_hash, (&self.instance, )).await;
         if let Err(e) = action_out {
             log::error!("Error executing action - {e}");
         }

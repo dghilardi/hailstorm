@@ -1,27 +1,12 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
-use actix::{Actor, Addr, AsyncContext, Context, Handler, Message, MessageResponse};
-use rand::{RngCore, thread_rng};
+use actix::{Actor, AsyncContext, Context, Handler, Message, MessageResponse};
+use crate::simulation::compound_id::U32Mask;
 use crate::simulation::error::SimulationError;
+use crate::simulation::simulation_user_model::SimulationUserModel;
 use crate::simulation::user::registry::UserRegistry;
-use crate::simulation::user_actor::{StopUser, UserActor, UserState};
-
-struct SimulationUser {
-    state: UserState,
-    addr: Addr<UserActor>,
-}
-
-impl SimulationUser {
-    fn stop_user(&mut self) {
-        let send_outcome = self.addr.try_send(StopUser);
-        if let Err(err) = send_outcome {
-            log::error!("Error stopping user - {}", err);
-        } else {
-            self.state = UserState::Stopping;
-        }
-    }
-}
+use crate::simulation::user_actor::UserState;
 
 pub struct SimulationActor {
     agent_id: u64,
@@ -29,7 +14,7 @@ pub struct SimulationActor {
     user_registry: UserRegistry,
     agents_count: u32,
     model_shapes: HashMap<String, Box<dyn Fn(f64) -> f64>>,
-    sim_users: HashMap<String, HashMap<u32, SimulationUser>>,
+    sim_users: HashMap<String, SimulationUserModel>,
 }
 
 impl Actor for SimulationActor {
@@ -76,45 +61,38 @@ impl SimulationActor {
                 let shift = (self.agent_id % 1000) as f64 / 1000f64;
                 let count = ((shape_val / self.agents_count as f64) + shift).floor() as usize;
 
-                let users = self.sim_users.entry(model.clone())
-                    .or_insert_with(Default::default);
+                let model_users = if let Some(mu) = self.sim_users.get_mut(model) {
+                    mu
+                } else {
+                    log::warn!("No simulation-user-model defined for model {model}");
+                    break;
+                };
 
-                let running_count = users
-                    .iter()
-                    .filter(|(_id, u)| u.state != UserState::Stopping)
-                    .count();
+                let running_count = model_users.count_active();
 
-                users.retain(|_id, u| u.addr.connected());
+                model_users.retain(|_id, u| u.is_connected());
 
                 match count.cmp(&running_count) {
                     Ordering::Less => {
-                        users.iter_mut()
-                            .filter(|(_id, u)| u.state != UserState::Stopping)
+                        model_users.users_mut()
+                            .filter(|u| u.state() != UserState::Stopping)
                             .take(running_count - count)
-                            .for_each(|(_id, u)| u.stop_user());
+                            .for_each(|u| u.stop_user());
                     }
                     Ordering::Equal => {
                         // running number is as expected
                     }
                     Ordering::Greater => {
-                        let mut rng = thread_rng();
                         for _idx in 0..(count - running_count) {
-                            let usr_id = rng.next_u32();
-                            let user_behaviour = self.user_registry
-                                .build_user(usr_id, model);
-
-                            users.insert(usr_id, SimulationUser {
-                                state: UserState::Running,
-                                addr: UserActor::create(|_| UserActor::new(usr_id, ctx.address(), user_behaviour.expect("Model not found in registry"))),
-                            });
+                            model_users.spawn_user(ctx.address());
                         }
                     }
                 }
             }
         } else {
             self.sim_users.iter_mut()
-                .flat_map(|(_m, u)| u.values_mut())
-                .filter(|u| u.state != UserState::Stopping)
+                .flat_map(|(_m, u)| u.users_mut())
+                .filter(|u| u.state() != UserState::Stopping)
                 .for_each(|u| u.stop_user());
         }
     }
@@ -132,14 +110,15 @@ impl Handler<UserStateChange> for SimulationActor {
 
     fn handle(&mut self, msg: UserStateChange, _ctx: &mut Self::Context) -> Self::Result {
         let model_entry = self.sim_users.iter_mut()
-            .find(|(_m, u)| u.contains_key(&msg.user_id));
+            .find(|(_m, u)| u.contains_id(msg.user_id));
 
         if matches!(msg.state, UserState::Stopped) {
-            model_entry
-                .map(|(_m, u)| u.remove(&msg.user_id));
+            if let Some((_m, u)) = model_entry {
+                u.remove_user(msg.user_id);
+            }
         } else {
             let maybe_simulation_user = model_entry
-                .and_then(|(_m, u)| u.get_mut(&msg.user_id));
+                .and_then(|(_m, u)| u.get_user_mut(msg.user_id));
 
             if let Some(u) = maybe_simulation_user {
                 u.state = msg.state;
@@ -161,13 +140,13 @@ pub enum SimulationCommand {
     },
     StopSimulation {
         reset: bool,
-    }
+    },
 }
 
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct SimulationCommandLst {
-    pub commands: Vec<SimulationCommand>
+    pub commands: Vec<SimulationCommand>,
 }
 
 impl Handler<SimulationCommandLst> for SimulationActor {
@@ -190,6 +169,20 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                     if let Err(err) = load_script_out {
                         log::error!("Error loading script - {err}");
                     }
+
+                    self.sim_users.drain();
+                    let model_count = self.user_registry.count_user_models();
+                    self.user_registry
+                        .model_names()
+                        .into_iter()
+                        .enumerate()
+                        .for_each(|(idx, model)| {
+                            self.sim_users.insert(model.to_string(), SimulationUserModel::new(
+                                U32Mask { code: idx as u32, bits: (32 - ((model_count - 1) as u32).leading_zeros()) as usize },
+                                self.user_registry.build_factory(model)
+                                    .unwrap_or_else(|| panic!("No factory for {model}")),
+                            ));
+                        });
                 }
                 SimulationCommand::LaunchSimulation { start_ts } => {
                     self.start_ts = Some(start_ts);
@@ -248,7 +241,7 @@ impl Handler<FetchSimulationStats> for SimulationActor {
         let stats = self.sim_users.iter()
             .map(|(model, usr)| ClientStats {
                 model: model.clone(),
-                count_by_state: count_by_state(usr),
+                count_by_state: usr.count_by_state(),
             })
             .collect();
 
@@ -261,14 +254,3 @@ impl Handler<FetchSimulationStats> for SimulationActor {
     }
 }
 
-fn count_by_state(usr_map: &HashMap<u32, SimulationUser>) -> HashMap<UserState, usize> {
-    let mut group_by_state = HashMap::new();
-
-    for usr in usr_map.values() {
-        let entry = group_by_state.entry(usr.state)
-            .or_insert(0);
-        *entry += 1;
-    }
-
-    group_by_state
-}
