@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct U32Mask {
     pub code: u32,
     pub bits: usize,
@@ -20,6 +21,7 @@ impl U32Mask {
     }
 }
 
+#[derive(Clone)]
 pub struct CompoundId<AgentId> {
     agent_id: AgentId,
     mask: U32Mask,
@@ -27,6 +29,17 @@ pub struct CompoundId<AgentId> {
 }
 
 impl <AgentId> CompoundId<AgentId> {
+    pub fn from_user_id(agent_id: AgentId, user_id: u32) -> Self {
+        Self {
+            agent_id,
+            mask: U32Mask {
+                code: 0,
+                bits: 0
+            },
+            user_id,
+        }
+    }
+
     pub fn internal_id(&self) -> u32 {
         self.mask.apply_mask(self.user_id)
     }
