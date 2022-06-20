@@ -1,13 +1,12 @@
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
-use actix::{Actor, Addr, AsyncContext, Context, Handler, Message, MessageResponse};
-use rand::{RngCore, thread_rng};
+use actix::{Actor, AsyncContext, Context, Handler, Message, MessageResponse};
+use crate::simulation::compound_id::U32Mask;
 use crate::simulation::error::SimulationError;
-use crate::simulation::sequential_id_generator::SequentialIdGenerator;
 use crate::simulation::simulation_user_model::SimulationUserModel;
 use crate::simulation::user::registry::UserRegistry;
-use crate::simulation::user_actor::{StopUser, UserActor, UserState};
+use crate::simulation::user_actor::UserState;
 
 pub struct SimulationActor {
     agent_id: u64,
@@ -62,8 +61,12 @@ impl SimulationActor {
                 let shift = (self.agent_id % 1000) as f64 / 1000f64;
                 let count = ((shape_val / self.agents_count as f64) + shift).floor() as usize;
 
-                let model_users = self.sim_users.entry(model.clone())
-                    .or_insert_with(Default::default);
+                let model_users = if let Some(mu) = self.sim_users.get_mut(model) {
+                    mu
+                } else {
+                    log::warn!("No simulation-user-model defined for model {model}");
+                    break;
+                };
 
                 let running_count = model_users.count_active();
 
@@ -80,7 +83,6 @@ impl SimulationActor {
                         // running number is as expected
                     }
                     Ordering::Greater => {
-                        let mut rng = thread_rng();
                         for _idx in 0..(count - running_count) {
                             model_users.spawn_user(ctx.address());
                         }
@@ -108,14 +110,15 @@ impl Handler<UserStateChange> for SimulationActor {
 
     fn handle(&mut self, msg: UserStateChange, _ctx: &mut Self::Context) -> Self::Result {
         let model_entry = self.sim_users.iter_mut()
-            .find(|(_m, u)| u.contains_key(&msg.user_id));
+            .find(|(_m, u)| u.contains_id(msg.user_id));
 
         if matches!(msg.state, UserState::Stopped) {
-            model_entry
-                .map(|(_m, u)| u.remove(&msg.user_id));
+            if let Some((_m, u)) = model_entry {
+                u.remove_user(msg.user_id);
+            }
         } else {
             let maybe_simulation_user = model_entry
-                .and_then(|(_m, u)| u.get_mut(&msg.user_id));
+                .and_then(|(_m, u)| u.get_user_mut(msg.user_id));
 
             if let Some(u) = maybe_simulation_user {
                 u.state = msg.state;
@@ -137,13 +140,13 @@ pub enum SimulationCommand {
     },
     StopSimulation {
         reset: bool,
-    }
+    },
 }
 
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct SimulationCommandLst {
-    pub commands: Vec<SimulationCommand>
+    pub commands: Vec<SimulationCommand>,
 }
 
 impl Handler<SimulationCommandLst> for SimulationActor {
@@ -169,6 +172,17 @@ impl Handler<SimulationCommandLst> for SimulationActor {
 
                     self.sim_users.drain();
                     let model_count = self.user_registry.count_user_models();
+                    self.user_registry
+                        .model_names()
+                        .into_iter()
+                        .enumerate()
+                        .for_each(|(idx, model)| {
+                            self.sim_users.insert(model.to_string(), SimulationUserModel::new(
+                                U32Mask { code: idx as u32, bits: (32 - ((model_count - 1) as u32).leading_zeros()) as usize },
+                                self.user_registry.build_factory(model)
+                                    .unwrap_or_else(|| panic!("No factory for {model}")),
+                            ));
+                        });
                 }
                 SimulationCommand::LaunchSimulation { start_ts } => {
                     self.start_ts = Some(start_ts);
@@ -239,3 +253,4 @@ impl Handler<FetchSimulationStats> for SimulationActor {
         }
     }
 }
+

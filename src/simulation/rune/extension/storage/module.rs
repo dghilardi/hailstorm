@@ -1,6 +1,6 @@
 use rune::{ContextError, Module};
 use crate::simulation::rune::extension::storage::registry::StorageRegistry;
-use super::storage::UserStorage;
+use super::user_storage::UserStorage;
 
 pub fn module() -> Result<Module, ContextError> {
     let mut module = Module::with_crate_item("hailstorm", &["storage"]);

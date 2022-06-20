@@ -6,10 +6,10 @@ use crate::simulation::user::params::UserParams;
 use crate::simulation::user::registry::User;
 
 pub struct UserModelFactory {
-    model: String,
-    behaviour: UserBehaviour,
-    runtime: Arc<RuntimeContext>,
-    unit: Arc<Unit>,
+    pub model: String,
+    pub behaviour: UserBehaviour,
+    pub runtime: Arc<RuntimeContext>,
+    pub unit: Arc<Unit>,
 }
 
 impl UserModelFactory {

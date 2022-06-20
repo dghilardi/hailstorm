@@ -1,7 +1,7 @@
 use std::time::Duration;
 use actix::{Actor, ActorContext, Addr, AsyncContext, AtomicResponse, Context, Handler, Message, WrapFuture, ActorFutureExt, Recipient};
 use rand::{Rng, thread_rng};
-use crate::simulation::simulation_actor::{SimulationActor, UserStateChange};
+use crate::simulation::simulation_actor::UserStateChange;
 use crate::simulation::user::registry::User;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
