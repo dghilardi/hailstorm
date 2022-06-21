@@ -5,7 +5,7 @@ use crate::simulation::sequential_id_generator::SequentialIdGenerator;
 use crate::simulation::simulation_actor::UserStateChange;
 use crate::simulation::user::model_factory::UserModelFactory;
 use crate::simulation::user_actor::{StopUser, UserActor, UserState};
-
+use crate::utils::varint::{VarintEncode, VarintDecode};
 pub struct SimulationUser {
     pub state: UserState,
     addr: Addr<UserActor>,
@@ -31,16 +31,16 @@ impl SimulationUser {
 }
 
 pub struct SimulationUserModel {
-    model_mask: U32Mask,
+    model_id: u32,
     id_generator: SequentialIdGenerator,
     user_factory: UserModelFactory,
     users: HashMap<u32, SimulationUser>,
 }
 
 impl SimulationUserModel {
-    pub fn new(mask: U32Mask, factory: UserModelFactory) -> Self {
+    pub fn new(model_id: u32, factory: UserModelFactory) -> Self {
         Self {
-            model_mask: mask,
+            model_id,
             user_factory: factory,
             id_generator: Default::default(),
             users: Default::default()
@@ -52,7 +52,14 @@ impl SimulationUserModel {
         + Handler<UserStateChange>
     {
         let usr_id = self.id_generator.next();
-        let internal_id = self.model_mask.apply_mask(usr_id);
+        let mut internal_id_varint = vec![self.model_id, usr_id].to_varint();
+        let internal_id = if internal_id_varint.len() > 4 {
+            panic!("Internal Id with more than 4 bytes are not currently supported");
+        } else {
+            let mut prefix = vec![0u8; 4-internal_id_varint.len()];
+            prefix.append(&mut internal_id_varint);
+            u32::from_be_bytes(prefix.try_into().expect("Error extracting bytes"))
+        };
         let user_behaviour = self.user_factory.new_user(internal_id);
 
         self.users.insert(internal_id, SimulationUser {
@@ -97,12 +104,14 @@ impl SimulationUserModel {
     }
 
     pub fn contains_id(&self, id: u32) -> bool {
-        self.model_mask.matches(id) && self.users.contains_key(&id)
+        let sub_ids = Vec::<u32>::from_varint(&id.to_be_bytes()).expect("Error converting from varint");
+        sub_ids[0] == self.model_id && self.users.contains_key(&id)
     }
 
     pub fn remove_user(&mut self, id: u32) {
         self.users.remove(&id);
-        self.id_generator.release_id(self.model_mask.remove_mask(id));
+        let sub_ids = Vec::<u32>::from_varint(&id.to_be_bytes()).expect("Error converting from varint");
+        self.id_generator.release_id(sub_ids[1]);
     }
 
     pub fn get_user_mut(&mut self, id: u32) -> Option<&mut SimulationUser> {

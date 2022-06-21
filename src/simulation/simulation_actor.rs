@@ -178,7 +178,7 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                         .enumerate()
                         .for_each(|(idx, model)| {
                             self.sim_users.insert(model.to_string(), SimulationUserModel::new(
-                                U32Mask { code: idx as u32, bits: (32 - ((model_count - 1) as u32).leading_zeros()) as usize },
+                                idx as u32,
                                 self.user_registry.build_factory(model)
                                     .unwrap_or_else(|| panic!("No factory for {model}")),
                             ));

@@ -7,7 +7,11 @@ pub struct U32Mask {
 impl U32Mask {
     pub fn apply_mask(&self, num: u32) -> u32 {
         let mask = !0 >> self.bits;
-        let family = (self.code << (32 - self.bits)) & !mask;
+        let family = if self.bits > 0 {
+            (self.code << (32 - self.bits)) & !mask
+        } else {
+            0
+        };
         let id = num & mask;
         family | id
     }
