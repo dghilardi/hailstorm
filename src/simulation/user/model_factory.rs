@@ -13,7 +13,7 @@ pub struct UserModelFactory {
 }
 
 impl UserModelFactory {
-    pub fn new_user(&self, user_id: u32) -> User {
+    pub fn new_user(&self, user_id: u64) -> User {
         let mut vm = rune::Vm::new(self.runtime.clone(), self.unit.clone());
         let params = UserParams { user_id };
         let instance = vm.call([&self.model, "new"], (params,)).expect("Error construction");

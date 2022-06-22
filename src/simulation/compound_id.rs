@@ -1,51 +1,48 @@
-#[derive(Clone)]
-pub struct U32Mask {
-    pub code: u32,
-    pub bits: usize,
-}
-
-impl U32Mask {
-    pub fn apply_mask(&self, num: u32) -> u32 {
-        let mask = !0 >> self.bits;
-        let family = if self.bits > 0 {
-            (self.code << (32 - self.bits)) & !mask
-        } else {
-            0
-        };
-        let id = num & mask;
-        family | id
-    }
-
-    pub fn remove_mask(&self, num: u32) -> u32 {
-        (!0 >> self.bits) & num
-    }
-
-    pub fn matches(&self, num: u32) -> bool {
-        (num >> (32 - self.bits)) == self.code
-    }
-}
+use thiserror::Error;
+use crate::utils::varint::{VarintDecode, VarintEncode};
 
 #[derive(Clone)]
 pub struct CompoundId<AgentId> {
     agent_id: AgentId,
-    mask: U32Mask,
+    model_id: u32,
     user_id: u32,
 }
 
+#[derive(Error, Debug)]
+pub enum CompoundIdParseError {
+    #[error("Bad Format - {0}")]
+    BadFormat(String)
+}
+
 impl <AgentId> CompoundId<AgentId> {
-    pub fn from_user_id(agent_id: AgentId, user_id: u32) -> Self {
+    pub fn new(
+        agent_id: AgentId,
+        model_id: u32,
+        user_id: u32,
+    ) -> Self {
         Self {
             agent_id,
-            mask: U32Mask {
-                code: 0,
-                bits: 0
-            },
+            model_id,
             user_id,
         }
     }
+    pub fn from_internal_id(agent_id: AgentId, internal_id: u64) -> Result<Self, CompoundIdParseError> {
+        let sub_ids = Vec::<u32>::from_varint(&internal_id.to_be_bytes())
+            .map_err(|e| CompoundIdParseError::BadFormat(e.to_string()))?;
+        if sub_ids.len() != 2 {
+            return Err(CompoundIdParseError::BadFormat(format!("Expected 2 subid in internal_id, found {}", sub_ids.len())));
+        }
+        Ok(Self {
+            agent_id,
+            model_id: sub_ids[0],
+            user_id: sub_ids[1],
+        })
+    }
 
-    pub fn internal_id(&self) -> u32 {
-        self.mask.apply_mask(self.user_id)
+    pub fn internal_id(&self) -> u64 {
+        let mut varint = vec![self.model_id, self.user_id].to_varint();
+        varint.splice(0..0, vec![0; 8 - varint.len()]);
+        u64::from_be_bytes(varint.try_into().expect("Error collecting bytes"))
     }
 
     pub fn user_id(&self) -> u32 {
@@ -55,7 +52,7 @@ impl <AgentId> CompoundId<AgentId> {
     pub fn with_agent_id<NewAgentId>(self, agent_id: NewAgentId) -> CompoundId<NewAgentId> {
         CompoundId {
             agent_id,
-            mask: self.mask,
+            model_id: self.model_id,
             user_id: self.user_id,
         }
     }
@@ -68,19 +65,10 @@ impl CompoundId<u32> {
     }
 
     pub fn into_bytes(self) -> Vec<u8> {
-        let agent_id_complete_bytes = self.agent_id.to_be_bytes();
-        let agent_id_bytes = if self.agent_id <= (u16::MAX as u32) {
-            &agent_id_complete_bytes[2..]
-        } else {
-            &agent_id_complete_bytes
-        };
-        [
-            agent_id_bytes,
-            &self.internal_id().to_be_bytes()[..]
-        ]
-            .into_iter()
-            .flatten()
-            .cloned()
-            .collect()
+        vec![
+            self.agent_id,
+            self.model_id,
+            self.user_id,
+        ].to_varint()
     }
 }

@@ -108,7 +108,7 @@ impl UserRegistry {
         !self.user_types.is_empty()
     }
 
-    pub fn build_user(&self, user_id: u32, model: &str) -> Option<User> {
+    pub fn build_user(&self, user_id: u64, model: &str) -> Option<User> {
         self.user_types
             .get(model)
             .map(|b| {

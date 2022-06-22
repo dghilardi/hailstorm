@@ -2,7 +2,6 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 use actix::{Actor, AsyncContext, Context, Handler, Message, MessageResponse};
-use crate::simulation::compound_id::U32Mask;
 use crate::simulation::error::SimulationError;
 use crate::simulation::simulation_user_model::SimulationUserModel;
 use crate::simulation::user::registry::UserRegistry;
@@ -101,7 +100,7 @@ impl SimulationActor {
 #[derive(Message, Debug)]
 #[rtype(result = "()")]
 pub struct UserStateChange {
-    pub user_id: u32,
+    pub user_id: u64,
     pub state: UserState,
 }
 

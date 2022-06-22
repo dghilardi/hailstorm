@@ -26,14 +26,14 @@ impl From<UserState> for u32 {
 }
 
 pub struct UserActor {
-    user_id: u32,
+    user_id: u64,
     state_change_recipient: Recipient<UserStateChange>,
     user: Option<User>,
 }
 
 impl UserActor {
     pub fn new<A>(
-        user_id: u32,
+        user_id: u64,
         simulation_addr: Addr<A>,
         user: User,
     ) -> Self
