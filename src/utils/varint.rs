@@ -31,8 +31,8 @@ impl VarintEncode for u32 {
 
 #[derive(Debug, Error)]
 pub enum VarintDecodeError {
-    #[error("Varint overflow")]
-    Overflow,
+    #[error("Varint overflow expected {expected} bytes, found {found} bytes {arg:02X?}")]
+    Overflow { expected: usize, found: usize, arg: Vec<u8> },
 }
 
 impl VarintDecode for u32 {
@@ -40,7 +40,7 @@ impl VarintDecode for u32 {
 
     fn from_varint(bytes: &[u8]) -> Result<Self, Self::Error> {
         if bytes.len() > 5 {
-            return Err(VarintDecodeError::Overflow);
+            return Err(VarintDecodeError::Overflow { expected: 5, found: bytes.len(), arg: bytes.to_vec() });
         }
         let mut result = 0;
         for idx in 0..bytes.len() {
@@ -69,13 +69,19 @@ impl<I: VarintDecode> VarintDecode for Vec<I> {
                 let last_vec = acc.last_mut().expect("At leas one vec is needed");
                 match last_vec.last() {
                     None => {
-                        last_vec.push(byte)
+                        if byte > 0 {
+                            last_vec.push(byte)
+                        }
                     }
                     Some(v) if (v & 1) == 0 => {
                         last_vec.push(byte)
                     }
                     Some(_) => {
-                        acc.push(vec![byte])
+                        if byte > 0 {
+                            acc.push(vec![byte])
+                        } else {
+                            acc.push(Vec::new())
+                        }
                     }
                 }
                 acc

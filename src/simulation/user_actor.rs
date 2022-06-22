@@ -3,6 +3,7 @@ use actix::{Actor, ActorContext, Addr, AsyncContext, AtomicResponse, Context, Ha
 use rand::{Rng, thread_rng};
 use crate::simulation::simulation_actor::UserStateChange;
 use crate::simulation::user::registry::User;
+use crate::utils::actix::weak_context::WeakContext;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub enum UserState {
@@ -56,7 +57,7 @@ impl Actor for UserActor {
         let interval = self.user.as_ref().expect("user not defined").get_interval();
         let random_delay = Duration::from_millis(thread_rng().gen_range(0..interval.as_millis() as u64));
         ctx.run_later(random_delay, move |_a, ctx| {
-            ctx.run_interval(interval, |_a, ctx| ctx.address().try_send(DoAction).unwrap_or_else(|e| log::error!("Error sending DoAction - {e}")));
+            ctx.run_interval_weak(interval, |addr| addr.try_send(DoAction).unwrap_or_else(|e| log::error!("Error sending DoAction - {e}")));
         });
     }
 
