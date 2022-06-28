@@ -5,7 +5,7 @@ use crate::simulation::sequential_id_generator::SequentialIdGenerator;
 use crate::simulation::simulation_actor::UserStateChange;
 use crate::simulation::user::model_factory::UserModelFactory;
 use crate::simulation::user_actor::{StopUser, UserActor, UserState};
-use crate::utils::varint::{VarintEncode, VarintDecode};
+use crate::utils::varint::VarintDecode;
 pub struct SimulationUser {
     pub state: UserState,
     addr: Addr<UserActor>,

@@ -1,5 +1,5 @@
 use std::time::Duration;
-use actix::{Actor, ActorContext, Addr, AsyncContext, Context, SpawnHandle};
+use actix::{Actor, Addr, AsyncContext, Context};
 use tokio::task::JoinHandle;
 
 pub trait WeakContext<A>: AsyncContext<A>

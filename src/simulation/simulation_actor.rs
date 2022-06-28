@@ -170,7 +170,6 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                     }
 
                     self.sim_users.drain();
-                    let model_count = self.user_registry.count_user_models();
                     self.user_registry
                         .model_names()
                         .into_iter()

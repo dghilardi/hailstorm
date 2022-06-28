@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use rune::{Context, Diagnostics, Hash, InstFnNameHash, Source, Sources, Unit, Value, Vm};
+use rune::{Context, Diagnostics, Hash, Source, Sources, Unit, Value, Vm};
 use rune::compile::{Component, Item};
 use rune::runtime::debug::DebugArgs;
 use rune::runtime::RuntimeContext;
@@ -76,8 +76,8 @@ impl UserRegistry {
                 acc
             }).into_iter()
             .filter(|(_k, v)|
-                v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("new".into_name()))) &&
-                    v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("register_user".into_name())))
+                v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("new".into()))) &&
+                    v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("register_user".into())))
             )
             .flat_map(|(k, _sig)| {
                 let mut user = UserBehaviour::default();
