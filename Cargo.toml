@@ -24,8 +24,8 @@ tonic = "0.7.2"
 prost = "0.10.3"
 prost-types = "0.10.1"
 
-rune = "0.10.3"
-rune-modules = { version = "0.10.3", features = ["http", "json"] }
+rune = "0.12.0"
+rune-modules = { version = "0.12.0", features = ["http", "json"] }
 meval = "0.2.0"
 
 dashmap = "5.3.4"
