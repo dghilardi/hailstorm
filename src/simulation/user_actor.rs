@@ -109,7 +109,7 @@ impl Handler<DoAction> for UserActor {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct TriggerHook {
-    state: UserState,
+    pub state: UserState,
 }
 
 impl Handler<TriggerHook> for UserActor {

@@ -4,7 +4,7 @@ use crate::simulation::compound_id::CompoundId;
 use crate::simulation::sequential_id_generator::SequentialIdGenerator;
 use crate::simulation::simulation_actor::UserStateChange;
 use crate::simulation::user::model_factory::UserModelFactory;
-use crate::simulation::user_actor::{StopUser, UserActor, UserState};
+use crate::simulation::user_actor::{StopUser, TriggerHook, UserActor, UserState};
 use crate::utils::varint::VarintDecode;
 pub struct SimulationUser {
     pub state: UserState,
@@ -16,6 +16,15 @@ impl SimulationUser {
         let send_outcome = self.addr.try_send(StopUser);
         if let Err(err) = send_outcome {
             log::error!("Error stopping user - {}", err);
+        } else {
+            self.state = UserState::Stopping;
+        }
+    }
+
+    pub fn trigger_hook(&mut self, state: UserState) {
+        let send_outcome = self.addr.try_send(TriggerHook { state });
+        if let Err(err) = send_outcome {
+            log::error!("Error triggering hook {:?} - {}", state, err);
         } else {
             self.state = UserState::Stopping;
         }
