@@ -10,6 +10,7 @@ use crate::simulation::rune::extension::user::UserBehaviour;
 use crate::simulation::user::error::{LoadScriptError, UserError};
 use crate::simulation::user::model_factory::UserModelFactory;
 use crate::simulation::user::params::UserParams;
+use crate::simulation::user_actor::UserState;
 
 #[derive(Debug)]
 pub struct UserRegistry {
@@ -171,6 +172,16 @@ impl User {
         let action_out = self.vm.async_call(action_hash, (&self.instance, )).await;
         if let Err(e) = action_out {
             log::error!("Error executing action - {e}");
+        }
+    }
+
+    pub async fn trigger_hook(&mut self, state: UserState) {
+        let maybe_hook = self.behaviour.hook_action(state);
+        if let Some(hook) = maybe_hook {
+            let action_out = self.vm.async_call(hook, (&self.instance, )).await;
+            if let Err(e) = action_out {
+                log::error!("Error executing action - {e}");
+            }
         }
     }
 }

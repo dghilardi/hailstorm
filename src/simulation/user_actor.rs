@@ -104,3 +104,29 @@ impl Handler<DoAction> for UserActor {
         }
     }
 }
+
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct TriggerHook {
+    state: UserState,
+}
+
+impl Handler<TriggerHook> for UserActor {
+    type Result = AtomicResponse<Self, ()>;
+
+    fn handle(&mut self, TriggerHook { state }: TriggerHook, _ctx: &mut Self::Context) -> Self::Result {
+        if let Some(mut user) = self.user.take() {
+            AtomicResponse::new(Box::pin(async move {
+                user.trigger_hook(state).await;
+                user
+            }
+                .into_actor(self)
+                .map(|u, a, _c| a.user = Some(u))
+            ))
+        } else {
+            log::warn!("User is occupied");
+            AtomicResponse::new(Box::pin(futures::future::ready(()).into_actor(self)))
+        }
+    }
+}
