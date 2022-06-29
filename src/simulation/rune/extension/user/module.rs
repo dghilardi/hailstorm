@@ -16,5 +16,7 @@ pub fn module() -> Result<Module, ContextError> {
     module.function(&["ActionTrigger", "alive"], |weight| ActionTrigger::Alive { weight })?;
     module.function(&["ActionTrigger", "enter_state"], |state: UserState| ActionTrigger::EnterState { state: state.into() })?;
 
+    module.ty::<UserState>()?;
+
     Ok(module)
 }
