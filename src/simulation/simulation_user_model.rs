@@ -25,8 +25,6 @@ impl SimulationUser {
         let send_outcome = self.addr.try_send(TriggerHook { state });
         if let Err(err) = send_outcome {
             log::error!("Error triggering hook {:?} - {}", state, err);
-        } else {
-            self.state = UserState::Stopping;
         }
     }
 
