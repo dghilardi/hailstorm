@@ -19,8 +19,20 @@ message AgentUpdate {
 }
 
 message AgentStats {
-  repeated ClientGroupStates states = 1;
-  string model = 2;
+  string model = 1;
+  repeated ClientGroupStates states = 2;
+  repeated ActionPerformance performance = 3;
+}
+
+message ActionPerformance {
+  string action = 1;
+  int32 status = 2;
+  repeated PerformanceBucket buckets = 3;
+}
+
+message PerformanceBucket {
+  uint64 timestamp = 1;
+  uint32 count = 2;
 }
 
 message ClientGroupStates {

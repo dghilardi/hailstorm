@@ -11,6 +11,7 @@ impl From<ClientStats> for AgentStats {
                 })
                 .collect(),
             model: cs.model,
+            performance: vec![]
         }
     }
 }
