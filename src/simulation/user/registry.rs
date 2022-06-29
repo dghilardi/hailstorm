@@ -5,7 +5,7 @@ use rune::{Context, Diagnostics, Hash, Source, Sources, Unit, Value, Vm};
 use rune::compile::{Component, Item};
 use rune::runtime::debug::DebugArgs;
 use rune::runtime::RuntimeContext;
-use crate::simulation::rune::extension::user;
+use crate::simulation::rune::extension::{metrics, user};
 use crate::simulation::rune::extension::user::UserBehaviour;
 use crate::simulation::user::error::{LoadScriptError, UserError};
 use crate::simulation::user::model_factory::UserModelFactory;
@@ -30,6 +30,7 @@ pub struct FunSignature {
 impl UserRegistry {
     pub fn new(mut context: Context) -> Result<Self, UserError> {
         context.install(&user::module()?)?;
+        context.install(&metrics::module()?)?;
         let runtime = Arc::new(context.runtime());
 
         Ok(Self {
