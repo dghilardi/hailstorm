@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use actix::{Actor, Addr, Handler};
 use rune::{Context, Diagnostics, Hash, Source, Sources, Unit, Value, Vm};
 use rune::compile::{Component, Item};
 use rune::runtime::debug::DebugArgs;
 use rune::runtime::RuntimeContext;
+use crate::agent::metrics::manager_actor::{StartActionTimer, StopActionTimer};
 use crate::simulation::rune::extension::{metrics, user};
 use crate::simulation::rune::extension::user::UserBehaviour;
 use crate::simulation::user::error::{LoadScriptError, UserError};
@@ -28,9 +30,16 @@ pub struct FunSignature {
 }
 
 impl UserRegistry {
-    pub fn new(mut context: Context) -> Result<Self, UserError> {
+    pub fn new<A>(
+        mut context: Context,
+        metrics_mgr_addr: Addr<A>,
+    ) -> Result<Self, UserError>
+        where A: Actor<Context=actix::Context<A>>
+        + Handler<StartActionTimer>
+        + Handler<StopActionTimer>
+    {
         context.install(&user::module()?)?;
-        context.install(&metrics::module()?)?;
+        context.install(&metrics::module(metrics_mgr_addr)?)?;
         let runtime = Arc::new(context.runtime());
 
         Ok(Self {
