@@ -40,7 +40,7 @@ async fn main() {
     env_logger::init();
     let args = Args::parse();
 
-    let metrics_actor_addr = MetricsManagerActor::create(|_| MetricsManagerActor::new());
+    let metrics_actor_addr = MetricsManagerActor::start_default();
 
     let mut rune_ctx = rune::Context::with_default_modules().expect("Error loading default rune modules");
     rune_ctx.install(&extension::storage::module().expect("Error initializing storage extension module")).expect("Error loading storage extension module");

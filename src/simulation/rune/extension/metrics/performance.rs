@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 use actix::{Actor, Addr, Context, Handler, Recipient};
-use rune::{Any, Value};
-use rune::runtime::{Function, Shared, VmError};
+use rune::Any;
+use rune::runtime::{Function, VmError};
 use crate::agent::metrics::manager_actor::{StartActionTimer, StartedActionTimer, StopActionTimer};
 use crate::agent::metrics::timer::{ActionOutcome, ExecutionInfo};
 
@@ -31,8 +31,8 @@ impl PerformanceRegistry {
             action: action.to_string(),
         })
             .await
-            .map_err(|err| VmError::panic(err))?
-            .map_err(|err| VmError::panic(err))
+            .map_err(VmError::panic)?
+            .map_err(VmError::panic)
     }
 
     async fn stop_timer(&self, timer: StartedActionTimer, elapsed: Duration, outcome: ActionOutcome) -> Result<(), VmError> {
@@ -41,8 +41,8 @@ impl PerformanceRegistry {
             execution: ExecutionInfo { elapsed, outcome },
         })
             .await
-            .map_err(|err| VmError::panic(err))?
-            .map_err(|err| VmError::panic(err))
+            .map_err(VmError::panic)?
+            .map_err(VmError::panic)
     }
 
     pub async fn observe(&self, name: &str, action: Function) -> Result<i64, VmError> {

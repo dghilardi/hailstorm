@@ -25,7 +25,7 @@ where
     ContextBuilder: FnOnce(Addr<SimulationActor>) -> rune::Context,
 {
     pub async fn launch(self) {
-        let metrics_addr = MetricsManagerActor::create(|_| MetricsManagerActor::new());
+        let metrics_addr = MetricsManagerActor::start_default();
 
         let simulation_ctx: Context<SimulationActor> = Context::new();
 

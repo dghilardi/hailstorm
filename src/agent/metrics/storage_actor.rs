@@ -90,7 +90,7 @@ impl MetricsStorageActor {
         self.pending.retain(|ts, timers| {
             if fst_incomplete_ts.map(|fst_ts| fst_ts > *ts).unwrap_or(true) {
                 if timers.iter().any(|t| t.get_execution().is_none()) {
-                    fst_incomplete_ts.insert(*ts);
+                    fst_incomplete_ts = Some(*ts);
                     true
                 } else {
                     for timer in timers {

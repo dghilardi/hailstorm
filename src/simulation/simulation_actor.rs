@@ -5,7 +5,7 @@ use actix::{Actor, AsyncContext, Context, Handler, Message, MessageResponse};
 use crate::simulation::error::SimulationError;
 use crate::simulation::simulation_user_model::SimulationUserModel;
 use crate::simulation::user::registry::UserRegistry;
-use crate::simulation::user_actor::{TriggerHook, UserState};
+use crate::simulation::user_actor::UserState;
 
 pub struct SimulationActor {
     agent_id: u64,

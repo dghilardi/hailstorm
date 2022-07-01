@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::time::SystemTime;
-use actix::{Actor, Addr, Context, Handler, MailboxError, Message, MessageResult, ResponseFuture};
+use actix::{Actor, Addr, Context, Handler, MailboxError, Message, ResponseFuture};
 use thiserror::Error;
 use crate::agent::metrics::storage_actor::{MetricsStorageActor, StartedTimer, StartTimer, StopTimer};
 use crate::agent::metrics::timer::ExecutionInfo;
@@ -37,6 +37,7 @@ impl Default for MetricsStorage {
     }
 }
 
+#[derive(Default)]
 pub struct MetricsManagerActor {
     storages: HashMap<StorageKey, MetricsStorage>,
 }
@@ -44,18 +45,12 @@ pub struct MetricsManagerActor {
 impl Actor for MetricsManagerActor {
     type Context = Context<Self>;
 
-    fn started(&mut self, ctx: &mut Self::Context) {
+    fn started(&mut self, _ctx: &mut Self::Context) {
         log::debug!("MetricsManagerActor started");
     }
 
-    fn stopped(&mut self, ctx: &mut Self::Context) {
+    fn stopped(&mut self, _ctx: &mut Self::Context) {
         log::debug!("MetricsManagerActor stopped");
-    }
-}
-
-impl MetricsManagerActor {
-    pub fn new() -> Self {
-        Self { storages: Default::default() }
     }
 }
 
@@ -90,7 +85,7 @@ pub struct StartActionTimer {
 impl Handler<StartActionTimer> for MetricsManagerActor {
     type Result = ResponseFuture<Result<StartedActionTimer, ActionTimerError>>;
 
-    fn handle(&mut self, msg: StartActionTimer, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: StartActionTimer, _ctx: &mut Self::Context) -> Self::Result {
         let key = StorageKey {
             model: msg.model,
             action: msg.action,
@@ -121,7 +116,7 @@ pub struct StopActionTimer {
 impl Handler<StopActionTimer> for MetricsManagerActor {
     type Result = ResponseFuture<Result<(), ActionTimerError>>;
 
-    fn handle(&mut self, StopActionTimer { timer, execution }: StopActionTimer, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, StopActionTimer { timer, execution }: StopActionTimer, _ctx: &mut Self::Context) -> Self::Result {
         let stop_req = self.storages.get_mut(&timer.key)
             .map(|ms| ms.stop_timer(timer.into(), execution));
         Box::pin(async move {
