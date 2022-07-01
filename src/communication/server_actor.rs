@@ -6,10 +6,10 @@ use futures::future::ready;
 use futures::StreamExt;
 use rand::{RngCore, thread_rng};
 use crate::communication::downstream_agent_actor::DownstreamAgentActor;
-use crate::communication::grpc::AgentMessage;
+use crate::communication::protobuf::grpc::AgentMessage;
 use crate::communication::message::{ControllerCommandMessage, MultiAgentUpdateMessage};
-use crate::grpc::controller_command::Target;
-use crate::grpc::MultiAgent;
+use crate::communication::protobuf::grpc::controller_command::Target;
+use crate::communication::protobuf::grpc::MultiAgent;
 use crate::server::RegisterConnectedAgentMsg;
 
 struct ConnectedAgent {
@@ -75,15 +75,19 @@ impl StreamHandler<ConnectedAgentMessage> for GrpcServerActor {
     fn handle(&mut self, ConnectedAgentMessage { connection_id, message }: ConnectedAgentMessage, _ctx: &mut Self::Context) {
         let connection = self.downstream_agents.get_mut(&connection_id).expect("Connection not defined");
         for update_item in message.updates.iter() {
-            let timestamp = update_item.timestamp.clone().map(SystemTime::try_from)
-                .transpose().ok().flatten()
+
+            let last_state_update_ts = update_item.stats.iter()
+                .flat_map(|stats| stats.states.iter())
+                .filter_map(|states| states.timestamp.clone())
+                .filter_map(|ts| SystemTime::try_from(ts).ok())
+                .max()
                 .unwrap_or_else(SystemTime::now);
 
             let agent_entry = connection.agent_ids.entry(update_item.agent_id)
-                .or_insert(ConnectedAgent { last_received_update: timestamp });
+                .or_insert(ConnectedAgent { last_received_update: last_state_update_ts });
 
-            if timestamp > agent_entry.last_received_update {
-                agent_entry.last_received_update = timestamp;
+            if last_state_update_ts > agent_entry.last_received_update {
+                agent_entry.last_received_update = last_state_update_ts;
             }
         }
 

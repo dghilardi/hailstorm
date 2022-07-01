@@ -212,6 +212,7 @@ pub enum SimulationState {
 
 pub struct ClientStats {
     pub model: String,
+    pub timestamp: SystemTime,
     pub count_by_state: HashMap<UserState, usize>,
 }
 
@@ -240,6 +241,7 @@ impl Handler<FetchSimulationStats> for SimulationActor {
 
         let stats = self.sim_users.iter()
             .map(|(model, usr)| ClientStats {
+                timestamp: SystemTime::now(),
                 model: model.clone(),
                 count_by_state: usr.count_by_state(),
             })

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
@@ -7,13 +8,14 @@ use futures::StreamExt;
 use rand::{Rng, thread_rng};
 use tokio::sync::mpsc::Receiver;
 
-use crate::communication::grpc::{AgentUpdate, ControllerCommand};
+use crate::communication::protobuf::grpc::{AgentUpdate, ControllerCommand};
 use crate::communication::message::{ControllerCommandMessage, SendAgentMessage};
 use crate::communication::notifier_actor::{RegisterAgentUpdateSender, UpdatesNotifierActor};
 use crate::communication::server_actor::GrpcServerActor;
-use crate::{grpc, MultiAgentUpdateMessage};
-use crate::grpc::command_item::Command;
-use crate::grpc::StopCommand;
+use crate::MultiAgentUpdateMessage;
+use crate::communication::protobuf::grpc;
+use crate::communication::protobuf::grpc::command_item::Command;
+use crate::communication::protobuf::grpc::{ModelStateSnapshot, ModelStats, StopCommand};
 use crate::simulation::simulation_actor::{ClientStats, FetchSimulationStats, SimulationActor, SimulationCommand, SimulationCommandLst, SimulationState, SimulationStats};
 use crate::simulation::user_actor::UserState;
 
@@ -71,16 +73,21 @@ impl AgentCoreActor {
                     SimulationState::Stopping => grpc::AgentSimulationState::Stopping,
                 };
 
-                let stats = act.update_simulation_stats(in_stats.stats, in_stats.timestamp)
+                let model_states = act.update_simulation_stats(in_stats.stats, in_stats.timestamp)
                     .into_iter()
-                    .map(Into::into)
-                    .collect();
+                    .map(|cs| (cs.model.clone(), ModelStateSnapshot::from(cs)))
+                    .collect::<HashMap<_, _>>();
 
                 notifier_addr.try_send(MultiAgentUpdateMessage(vec![AgentUpdate {
                     agent_id,
-                    stats,
+                    stats: model_states.into_iter()
+                        .map(|(model, v)| ModelStats {
+                            model,
+                            states: vec![v],
+                            performance: vec![]
+                        })
+                        .collect(),
                     update_id: thread_rng().gen(),
-                    timestamp: Some(in_stats.timestamp.into()),
                     name: "".to_string(),
                     state: state as i32,
                     simulation_id: "".to_string(),

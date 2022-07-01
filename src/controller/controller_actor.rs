@@ -8,10 +8,10 @@ use actix::dev::RecipientRequest;
 
 use crate::communication::message::{ControllerCommandMessage, MultiAgentUpdateMessage};
 use crate::controller::model::simulation::{SimulationDef, SimulationState};
-use crate::grpc;
-use crate::grpc::{AgentGroup, AgentUpdate, CommandItem, ControllerCommand, LaunchCommand, LoadSimCommand, MultiAgent, StopCommand};
-use crate::grpc::controller_command::Target;
-use crate::grpc::command_item::Command;
+use crate::communication::protobuf::grpc;
+use crate::communication::protobuf::grpc::{AgentGroup, AgentUpdate, CommandItem, ControllerCommand, LaunchCommand, LoadSimCommand, MultiAgent, StopCommand};
+use crate::communication::protobuf::grpc::controller_command::Target;
+use crate::communication::protobuf::grpc::command_item::Command;
 
 #[derive(Clone, Debug)]
 struct AgentState {
@@ -116,13 +116,17 @@ impl ControllerActor {
 
     fn align_agents_simulation_state(&mut self, updates: &[AgentUpdate]) -> impl Future<Output=()> {
         for update in updates {
-            if let Some(timestamp) = update.timestamp.clone().map(SystemTime::try_from).transpose().ok().flatten() {
-                let entry = self.agents_state.entry(update.agent_id)
-                    .or_insert(AgentState { timestamp, state: update.state() });
+            for model_stats in update.stats.iter() {
+                for states in model_stats.states.iter() {
+                    if let Some(timestamp) = states.timestamp.clone().map(SystemTime::try_from).transpose().ok().flatten() {
+                        let entry = self.agents_state.entry(update.agent_id)
+                            .or_insert(AgentState { timestamp, state: update.state() });
 
-                if entry.timestamp < timestamp {
-                    entry.timestamp = timestamp;
-                    entry.state = update.state();
+                        if entry.timestamp < timestamp {
+                            entry.timestamp = timestamp;
+                            entry.state = update.state();
+                        }
+                    }
                 }
             }
         }

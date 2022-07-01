@@ -10,34 +10,39 @@ message AgentMessage {
 
 message AgentUpdate {
   uint64 agent_id = 1;
-  repeated AgentStats stats = 2;
+  repeated ModelStats stats = 2;
   uint64 update_id = 3;
-  google.protobuf.Timestamp timestamp = 4;
   string name = 16;
   AgentSimulationState state = 17;
   string simulation_id = 18;
 }
 
-message AgentStats {
+message ModelStats {
   string model = 1;
+  repeated ModelStateSnapshot states = 2;
+  repeated PerformanceSnapshot performance = 3;
+}
+
+message ModelStateSnapshot {
+  google.protobuf.Timestamp timestamp = 1;
   repeated ClientGroupStates states = 2;
-  repeated ActionPerformance performance = 3;
-}
-
-message ActionPerformance {
-  string action = 1;
-  int32 status = 2;
-  repeated PerformanceBucket buckets = 3;
-}
-
-message PerformanceBucket {
-  uint64 timestamp = 1;
-  uint32 count = 2;
 }
 
 message ClientGroupStates {
   uint32 state_id = 1;
   uint32 count = 2;
+}
+
+message PerformanceSnapshot {
+  google.protobuf.Timestamp timestamp = 1;
+  string action = 2;
+  repeated PerformanceHistogram histograms = 3;
+}
+
+message PerformanceHistogram {
+  int64 status = 1;
+  repeated uint64 buckets = 2;
+  uint64 sum = 3;
 }
 
 enum AgentSimulationState {

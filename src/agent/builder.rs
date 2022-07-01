@@ -6,7 +6,7 @@ use tonic::transport::Server;
 use crate::agent::actor::AgentCoreActor;
 use crate::agent::metrics::manager_actor::MetricsManagerActor;
 use crate::communication::upstream_agent_actor::UpstreamAgentActor;
-use crate::communication::grpc;
+use crate::communication::protobuf::grpc;
 use crate::communication::notifier_actor::UpdatesNotifierActor;
 use crate::communication::server::HailstormGrpcServer;
 use crate::communication::server_actor::GrpcServerActor;

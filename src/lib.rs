@@ -1,7 +1,7 @@
 //! A distributed load testing framework inspired by [Locust](https://locust.io).
 //!
 //!
-pub use communication::grpc;
+pub use communication::protobuf::grpc;
 pub use communication::server;
 pub use communication::message::MultiAgentUpdateMessage;
 

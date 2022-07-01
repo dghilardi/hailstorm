@@ -1,7 +1,7 @@
 use std::time::SystemTime;
-use crate::grpc;
+use crate::communication::protobuf::grpc;
 
-use crate::grpc::{AgentSimulationState, ClientDistribution, LoadSimCommand};
+use crate::communication::protobuf::grpc::{AgentSimulationState, ClientDistribution, LoadSimCommand};
 
 #[derive(Clone)]
 pub struct UserDef {

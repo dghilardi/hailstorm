@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use actix::{Addr, AsyncContext, Context, Recipient};
 use tonic::transport::Server;
 use tonic::transport::server::Router;
-use crate::communication::grpc;
+use crate::communication::protobuf::grpc;
 use crate::communication::server::HailstormGrpcServer;
 use crate::communication::server_actor::GrpcServerActor;
 use crate::controller::controller_actor::ControllerActor;
