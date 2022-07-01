@@ -3,7 +3,7 @@ use std::future::Future;
 use std::time::SystemTime;
 use actix::{Actor, Addr, Context, Handler, MailboxError, Message, MessageResult, ResponseFuture};
 use thiserror::Error;
-use crate::agent::metrics::storage_actor::{MetricsStorageActor, StartedTimer, StartTimer};
+use crate::agent::metrics::storage_actor::{MetricsStorageActor, StartedTimer, StartTimer, StopTimer};
 use crate::agent::metrics::timer::ExecutionInfo;
 
 #[derive(Eq, Hash, PartialEq, Clone)]
@@ -14,13 +14,17 @@ pub struct StorageKey {
 
 pub struct MetricsStorage {
     ts_last_received_metric: SystemTime,
-    addr: Addr<MetricsStorageActor>
+    addr: Addr<MetricsStorageActor>,
 }
 
 impl MetricsStorage {
     pub fn start_timer(&mut self) -> impl Future<Output=Result<StartedTimer, MailboxError>> {
         self.ts_last_received_metric = SystemTime::now();
         self.addr.send(StartTimer)
+    }
+    pub fn stop_timer(&mut self, timer: StartedTimer, execution: ExecutionInfo) -> impl Future<Output=Result<(), MailboxError>> {
+        self.ts_last_received_metric = SystemTime::now();
+        self.addr.send(StopTimer { timer, execution })
     }
 }
 
@@ -34,7 +38,7 @@ impl Default for MetricsStorage {
 }
 
 pub struct MetricsManagerActor {
-    storages: HashMap<StorageKey, MetricsStorage>
+    storages: HashMap<StorageKey, MetricsStorage>,
 }
 
 impl Actor for MetricsManagerActor {
@@ -67,11 +71,20 @@ pub struct StartedActionTimer {
     timestamp: SystemTime,
 }
 
+impl From<StartedActionTimer> for StartedTimer {
+    fn from(t: StartedActionTimer) -> Self {
+        Self {
+            id: t.id,
+            timestamp: t.timestamp,
+        }
+    }
+}
+
 #[derive(Message)]
 #[rtype(result = "Result<StartedActionTimer, ActionTimerError>")]
 pub struct StartActionTimer {
-    model: String,
-    action: String,
+    pub model: String,
+    pub action: String,
 }
 
 impl Handler<StartActionTimer> for MetricsManagerActor {
@@ -99,16 +112,24 @@ impl Handler<StartActionTimer> for MetricsManagerActor {
 
 
 #[derive(Message)]
-#[rtype(result = "()")]
+#[rtype(result = "Result<(), ActionTimerError>")]
 pub struct StopActionTimer {
-    timer: StartedActionTimer,
-    execution: ExecutionInfo,
+    pub timer: StartedActionTimer,
+    pub execution: ExecutionInfo,
 }
 
 impl Handler<StopActionTimer> for MetricsManagerActor {
-    type Result = ();
+    type Result = ResponseFuture<Result<(), ActionTimerError>>;
 
-    fn handle(&mut self, msg: StopActionTimer, ctx: &mut Self::Context) -> Self::Result {
-        todo!()
+    fn handle(&mut self, StopActionTimer { timer, execution }: StopActionTimer, ctx: &mut Self::Context) -> Self::Result {
+        let stop_req = self.storages.get_mut(&timer.key)
+            .map(|ms| ms.stop_timer(timer.into(), execution));
+        Box::pin(async move {
+            if let Some(fut) = stop_req {
+                fut.await.map_err(|err| ActionTimerError::InternalError(err.to_string()))
+            } else {
+                Err(ActionTimerError::InternalError(String::from("Metrics storage not found")))
+            }
+        })
     }
 }

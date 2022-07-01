@@ -11,7 +11,7 @@ where A: Actor<Context=Context<A>>
     let mut module = Module::with_crate_item("hailstorm", &["metrics"]);
 
     module.ty::<PerformanceRegistry>()?;
-    module.function(&["PerformanceRegistry", "new"], move || PerformanceRegistry::new(metrics_mgr_addr.clone()))?;
+    module.function(&["PerformanceRegistry", "new"], move |model| PerformanceRegistry::new(model, metrics_mgr_addr.clone()))?;
     module.async_inst_fn("observe", PerformanceRegistry::observe)?;
 
     Ok(module)

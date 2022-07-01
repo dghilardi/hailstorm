@@ -97,8 +97,8 @@ impl Handler<StartTimer> for MetricsStorageActor {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct StopTimer {
-    timer: StartedTimer,
-    execution: ExecutionInfo,
+    pub timer: StartedTimer,
+    pub execution: ExecutionInfo,
 }
 
 impl Handler<StopTimer> for MetricsStorageActor {
