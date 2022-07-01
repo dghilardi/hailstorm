@@ -2,14 +2,17 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::time::SystemTime;
 use actix::{Actor, Addr, Context, Handler, MailboxError, Message, ResponseFuture};
+use futures::future::join_all;
+use futures::FutureExt;
+
 use thiserror::Error;
-use crate::agent::metrics::storage_actor::{MetricsStorageActor, StartedTimer, StartTimer, StopTimer};
+use crate::agent::metrics::storage_actor::{FetchMetrics, MetricsFamilySnapshot, MetricsStorageActor, StartedTimer, StartTimer, StopTimer};
 use crate::agent::metrics::timer::ExecutionInfo;
 
-#[derive(Eq, Hash, PartialEq, Clone)]
+#[derive(Debug, Eq, Hash, PartialEq, Clone)]
 pub struct StorageKey {
-    model: String,
-    action: String,
+    pub model: String,
+    pub action: String,
 }
 
 pub struct MetricsStorage {
@@ -125,6 +128,42 @@ impl Handler<StopActionTimer> for MetricsManagerActor {
             } else {
                 Err(ActionTimerError::InternalError(String::from("Metrics storage not found")))
             }
+        })
+    }
+}
+
+pub struct ActionMetricsFamilySnapshot {
+    pub key: StorageKey,
+    pub metrics: Vec<MetricsFamilySnapshot>
+}
+
+#[derive(Message)]
+#[rtype(result = "Vec<ActionMetricsFamilySnapshot>")]
+pub struct FetchActionMetrics;
+
+impl Handler<FetchActionMetrics> for MetricsManagerActor {
+    type Result = ResponseFuture<Vec<ActionMetricsFamilySnapshot>>;
+
+    fn handle(&mut self, _msg: FetchActionMetrics, _ctx: &mut Self::Context) -> Self::Result {
+        let fut_metrics = self.storages.iter()
+            .map(|(key, storage)| {
+                let key = key.clone();
+                let fut = storage.addr.send(FetchMetrics);
+                fut.map(|f| (key, f))
+            }).collect::<Vec<_>>();
+        Box::pin(async move {
+            join_all(fut_metrics)
+                .await
+                .into_iter()
+                .filter_map(|(key, res)| match res {
+                    Ok(metrics) => Some((key, metrics)),
+                    Err(err) => {
+                        log::warn!("Error fetching perf metrics for {key:?} - {err}");
+                        None
+                    }
+                })
+                .map(|(key, metrics)| ActionMetricsFamilySnapshot { key, metrics })
+                .collect()
         })
     }
 }

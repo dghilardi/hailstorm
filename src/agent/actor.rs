@@ -2,11 +2,13 @@ use std::collections::HashMap;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
-use actix::{Actor, ActorFutureExt, ActorTryFutureExt, Addr, AsyncContext, Context, Handler, Recipient, ResponseFuture, WrapFuture};
+use actix::{Actor, ActorFutureExt, ActorTryFutureExt, Addr, AsyncContext, Context, Handler, MailboxError, Recipient, ResponseFuture, WrapFuture};
+use actix::dev::Request;
 use futures::future::ok;
-use futures::StreamExt;
+use futures::{join, StreamExt};
 use rand::{Rng, thread_rng};
 use tokio::sync::mpsc::Receiver;
+use crate::agent::metrics::manager_actor::{ActionMetricsFamilySnapshot, FetchActionMetrics, MetricsManagerActor};
 
 use crate::communication::protobuf::grpc::{AgentUpdate, ControllerCommand};
 use crate::communication::message::{ControllerCommandMessage, SendAgentMessage};
@@ -31,6 +33,7 @@ pub struct AgentCoreActor {
     notifier_addr: Addr<UpdatesNotifierActor>,
     server_addr: Addr<GrpcServerActor>,
     simulation_addr: Addr<SimulationActor>,
+    metrics_addr: Addr<MetricsManagerActor>,
     last_sent_metrics: Vec<AggregatedUserStateMetric>,
 }
 
@@ -40,31 +43,42 @@ impl AgentCoreActor {
         notifier_addr: Addr<UpdatesNotifierActor>,
         server_addr: Addr<GrpcServerActor>,
         simulation_addr: Addr<SimulationActor>,
+        metrics_addr: Addr<MetricsManagerActor>,
     ) -> Self {
         Self {
             agent_id,
             notifier_addr,
             server_addr,
             simulation_addr,
+            metrics_addr,
             last_sent_metrics: vec![],
         }
     }
 
+    fn fetch_perf_data(&mut self) -> Request<MetricsManagerActor, FetchActionMetrics> {
+        self.metrics_addr.send(FetchActionMetrics)
+    }
+
+    fn fetch_state_data(&mut self) -> Request<SimulationActor, FetchSimulationStats> {
+        self.simulation_addr.send(FetchSimulationStats)
+    }
 
     fn send_data(&mut self, ctx: &mut actix::Context<Self>) {
         let agent_id = self.agent_id;
         let notifier_addr = self.notifier_addr.clone();
-        let simulation_addr = self.simulation_addr.clone();
+        let fetch_perf_req = self.fetch_perf_data();
+        let fetch_state_req = self.fetch_state_data();
 
         let fut = async move {
-            simulation_addr.send(FetchSimulationStats).await
-                .map_err(|err| {
-                    log::error!("Error fetching simulation stats - {err}");
+            let (perf_res, state_res) = join!(fetch_perf_req, fetch_state_req);
+            { Ok((perf_res?, state_res?)) }
+                .map_err(|err: MailboxError| {
+                    log::error!("Error fetching stats - {err}");
                     err
                 })
         }
             .into_actor(self)
-            .and_then(move |in_stats: SimulationStats, act, _ctx| {
+            .and_then(move |(in_perf, in_stats): (Vec<ActionMetricsFamilySnapshot>, SimulationStats), act, _ctx| {
                 let state = match in_stats.state {
                     SimulationState::Idle => grpc::AgentSimulationState::Idle,
                     SimulationState::Ready => grpc::AgentSimulationState::Ready,
@@ -82,9 +96,11 @@ impl AgentCoreActor {
                     agent_id,
                     stats: model_states.into_iter()
                         .map(|(model, v)| ModelStats {
-                            model,
                             states: vec![v],
-                            performance: vec![]
+                            performance: in_perf.iter()
+                                .filter(|p| p.key.model.eq(&model))
+                                .flat_map(|metr_fam| metr_fam.to_protobuf()).collect(),
+                            model,
                         })
                         .collect(),
                     update_id: thread_rng().gen(),

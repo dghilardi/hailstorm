@@ -30,7 +30,7 @@ where
         let simulation_ctx: Context<SimulationActor> = Context::new();
 
         let rune_context = (self.rune_context_builder)(simulation_ctx.address());
-        let user_registry = UserRegistry::new(rune_context, metrics_addr).expect("Error during registry construction");
+        let user_registry = UserRegistry::new(rune_context, metrics_addr.clone()).expect("Error during registry construction");
 
         let updater_addr = UpdatesNotifierActor::create(|_| UpdatesNotifierActor::new());
         let server_actor = GrpcServerActor::create(|_| GrpcServerActor::new(updater_addr.clone().recipient()));
@@ -40,6 +40,7 @@ where
             updater_addr.clone(),
             server_actor.clone(),
             simulation_actor,
+            metrics_addr,
         ));
 
         if self.upstream.is_empty() {

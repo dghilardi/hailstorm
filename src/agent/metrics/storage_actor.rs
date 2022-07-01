@@ -10,17 +10,22 @@ use super::timer::Timer;
 
 #[derive(Clone, Default)]
 pub struct Metrics {
-    histogram: [u64; 20],
-    sum: u64,
-    count: u64,
+    pub histogram: [u64; 20],
+    pub sum: u64,
+    pub count: u64,
 }
 
 type MetricsFamily = HashMap<ActionOutcome, Metrics>;
 
+pub struct MetricsFamilySnapshot {
+    pub timestamp: SystemTime,
+    pub metrics: MetricsFamily,
+}
+
 pub struct MFSnapshotStorage {
     last_snapshot: Option<SystemTime>,
-    buf_producer: ringbuf::Producer<(SystemTime, MetricsFamily)>,
-    buf_consumer: ringbuf::Consumer<(SystemTime, MetricsFamily)>,
+    buf_producer: ringbuf::Producer<MetricsFamilySnapshot>,
+    buf_consumer: ringbuf::Consumer<MetricsFamilySnapshot>,
 }
 
 impl Default for MFSnapshotStorage {
@@ -36,12 +41,12 @@ impl Default for MFSnapshotStorage {
 }
 
 impl MFSnapshotStorage {
-    pub fn add_snapshot(&mut self, ts: SystemTime, snapshot: MetricsFamily) {
-        let out = self.buf_producer.push((ts, snapshot));
-        if let Err((ts, _)) = out {
-            log::error!("Error saving metrics snapshot {:?}", ts);
+    pub fn add_snapshot(&mut self, timestamp: SystemTime, metrics: MetricsFamily) {
+        let out = self.buf_producer.push(MetricsFamilySnapshot { timestamp, metrics });
+        if let Err(MetricsFamilySnapshot { timestamp, .. }) = out {
+            log::error!("Error saving metrics snapshot {:?}", timestamp);
         } else {
-            self.last_snapshot = Some(ts);
+            self.last_snapshot = Some(timestamp);
         }
     }
 
@@ -161,5 +166,21 @@ impl Handler<StopTimer> for MetricsStorageActor {
         } else {
             log::error!("No timer found with ts {:?} and id {}", msg.timer.timestamp, msg.timer.id);
         }
+    }
+}
+
+#[derive(Message)]
+#[rtype(result = "Vec<MetricsFamilySnapshot>")]
+pub struct FetchMetrics;
+
+impl Handler<FetchMetrics> for MetricsStorageActor {
+    type Result = MessageResult<FetchMetrics>;
+
+    fn handle(&mut self, _msg: FetchMetrics, _ctx: &mut Self::Context) -> Self::Result {
+        let mut res = Vec::with_capacity(self.snapshots.buf_consumer.len());
+        while let Some(snapshot) = self.snapshots.buf_consumer.pop() {
+            res.push(snapshot)
+        }
+        MessageResult(res)
     }
 }
