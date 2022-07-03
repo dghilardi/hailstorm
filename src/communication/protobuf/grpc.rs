@@ -21,6 +21,14 @@ impl AgentUpdate {
             .flat_map(|model_stats| model_stats.last_ts())
             .max()
     }
+
+    pub fn update_ts(&self) -> Option<SystemTime> {
+        self.timestamp.clone()
+            .map(TryInto::try_into)
+            .transpose()
+            .ok()
+            .flatten()
+    }
 }
 
 impl ModelStats {

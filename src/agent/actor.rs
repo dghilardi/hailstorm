@@ -104,6 +104,7 @@ impl AgentCoreActor {
                         })
                         .collect(),
                     update_id: thread_rng().gen(),
+                    timestamp: Some(SystemTime::now().into()),
                     name: "".to_string(),
                     state: state as i32,
                     simulation_id: "".to_string(),

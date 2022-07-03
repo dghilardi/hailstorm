@@ -12,6 +12,7 @@ message AgentUpdate {
   uint64 agent_id = 1;
   repeated ModelStats stats = 2;
   uint64 update_id = 3;
+  google.protobuf.Timestamp timestamp = 4;
   string name = 16;
   AgentSimulationState state = 17;
   string simulation_id = 18;

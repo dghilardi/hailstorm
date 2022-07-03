@@ -62,7 +62,7 @@ async fn handle_messages(mut msg_stream: Streaming<AgentMessage>, sender: Sender
                 }
                 registered_agents
                     .retain(|_idx, update|
-                        update.last_ts()
+                        update.update_ts()
                             .map(|ts| SystemTime::now().sub(Duration::from_secs(30)) < ts)
                             .unwrap_or(false)
                     );
