@@ -104,7 +104,7 @@ impl MetricsStorageActor {
                             let cs = execution.elapsed.as_millis().div(10) as u64;
                             let idx = Some(cs)
                                 .filter(|cs| *cs > 0)
-                                .map(|cs| min(127 - cs.leading_zeros(), 19) as usize)
+                                .map(|cs| min(63 - cs.leading_zeros(), 19) as usize)
                                 .unwrap_or(0);
 
                             status.histogram[idx] += 1;
