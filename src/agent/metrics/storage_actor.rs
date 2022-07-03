@@ -12,7 +12,6 @@ use super::timer::Timer;
 pub struct Metrics {
     pub histogram: [u64; 20],
     pub sum: u64,
-    pub count: u64,
 }
 
 type MetricsFamily = HashMap<ActionOutcome, Metrics>;
@@ -108,8 +107,9 @@ impl MetricsStorageActor {
                                 .unwrap_or(0);
 
                             status.histogram[idx] += 1;
-                            status.count += 1;
                             status.sum += cs;
+
+                            log::debug!("centiseconds = {cs} idx = {idx} sum = {}", status.sum);
                         } else {
                             log::error!("Non executed timer found during executed timers processing!");
                         }
