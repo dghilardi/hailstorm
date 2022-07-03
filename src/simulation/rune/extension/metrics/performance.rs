@@ -1,9 +1,12 @@
 use std::time::{Duration, Instant};
+
 use actix::{Actor, Addr, Context, Handler, Recipient};
 use rune::Any;
 use rune::runtime::{Function, VmError};
+
 use crate::agent::metrics::manager_actor::{StartActionTimer, StartedActionTimer, StopActionTimer};
 use crate::agent::metrics::timer::{ActionOutcome, ExecutionInfo};
+use crate::simulation::rune::extension::metrics::model::ActionResult;
 
 #[derive(Any)]
 pub struct PerformanceRegistry {
@@ -45,12 +48,12 @@ impl PerformanceRegistry {
             .map_err(VmError::panic)
     }
 
-    pub async fn observe(&self, name: &str, action: Function) -> Result<i64, VmError> {
+    pub async fn observe(&self, name: &str, action: Function) -> Result<ActionResult, VmError> {
         let timer = self.start_timer(name).await?;
         let before = Instant::now();
         let res = action.async_send_call(()).await;
         let elapsed = before.elapsed();
-        self.stop_timer(timer, elapsed, *res.as_ref().unwrap_or(&-1)).await?;
+        self.stop_timer(timer, elapsed, res.as_ref().map(ActionResult::extract_status).unwrap_or(-1)).await?;
         res
     }
 }
