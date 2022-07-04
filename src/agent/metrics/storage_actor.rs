@@ -101,10 +101,7 @@ impl MetricsStorageActor {
                         if let Some(execution) = timer.get_execution() {
                             let status = self.histogram.entry(execution.outcome).or_default();
                             let cs = execution.elapsed.as_millis().div(10) as u64;
-                            let idx = Some(cs)
-                                .filter(|cs| *cs > 0)
-                                .map(|cs| min(63 - cs.leading_zeros(), 19) as usize)
-                                .unwrap_or(0);
+                            let idx = compute_bucket_idx(cs);
 
                             status.histogram[idx] += 1;
                             status.sum += cs;
@@ -124,6 +121,13 @@ impl MetricsStorageActor {
             }
         });
     }
+}
+
+fn compute_bucket_idx(value: u64) -> usize {
+    Some(value)
+        .filter(|cs| *cs > 0)
+        .map(|cs| min(64 - (cs - 1).leading_zeros(), 19) as usize)
+        .unwrap_or(0)
 }
 
 pub struct StartedTimer { pub id: u32, pub timestamp: SystemTime }
@@ -182,5 +186,19 @@ impl Handler<FetchMetrics> for MetricsStorageActor {
             res.push(snapshot)
         }
         MessageResult(res)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::agent::metrics::storage_actor::compute_bucket_idx;
+
+    #[test]
+    fn test_compute_bucket_idx() {
+        for v in 0..100 {
+            let idx = compute_bucket_idx(v);
+            assert!(v <= 2u64.pow(idx as u32), "v = {v}, idx = {idx}");
+            assert!(idx == 0 || v > 2u64.pow(idx as u32 - 1), "v = {v}, idx = {idx}");
+        }
     }
 }
