@@ -10,6 +10,7 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
+time = { version = "0.3.11", features = ["formatting"] }
 log = "0.4.17"
 rand = "0.8.5"
 thiserror = "1.0.31"

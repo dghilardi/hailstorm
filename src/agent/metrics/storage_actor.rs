@@ -5,6 +5,8 @@ use std::time::{Duration, SystemTime};
 use actix::{Actor, Context, Handler, Message, MessageResult};
 use lazy_static::lazy_static;
 use ringbuf::RingBuffer;
+use time::{OffsetDateTime};
+use time::format_description::well_known::Rfc3339;
 use crate::agent::metrics::timer::{ActionOutcome, ExecutionInfo};
 use super::timer::Timer;
 
@@ -93,7 +95,7 @@ impl MetricsStorageActor {
         let mut fst_incomplete_ts: Option<SystemTime> = None;
         self.pending.retain(|ts, timers| {
             if fst_incomplete_ts.map(|fst_ts| fst_ts > *ts).unwrap_or(true) {
-                if timers.iter().any(|t| t.get_execution().is_none()) {
+                if ts.add(Duration::from_secs(3600)) > SystemTime::now() && timers.iter().any(|t| t.get_execution().is_none()) {
                     fst_incomplete_ts = Some(*ts);
                     true
                 } else {
@@ -108,7 +110,7 @@ impl MetricsStorageActor {
 
                             log::debug!("centiseconds = {cs} idx = {idx} sum = {}", status.sum);
                         } else {
-                            log::error!("Non executed timer found during executed timers processing!");
+                            log::warn!("dropping pending timer '{}'", OffsetDateTime::from(*ts).format(&Rfc3339).unwrap_or_default());
                         }
                     }
                     if self.snapshots.is_elapsed(*HIST_MAX_RES, *ts) {
