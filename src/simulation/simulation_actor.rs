@@ -37,8 +37,14 @@ impl SimulationActor {
     }
 
     pub fn register_model(&mut self, model: String, shape: String) -> Result<(), SimulationError> {
+        let mut ctx = meval::Context::new(); // built-ins
+        ctx.func("rect", |x| if x.abs() > 0.5 { 0.0 } else if x.abs() == 0.5 { 0.5 } else { 1.0 })
+            .func("tri", |x| if x.abs() < 1.0 { 1.0 - x.abs() } else { 0.0 })
+            .func("step", |x| if x < 0.0 { 0.0 } else if x == 0.0 { 0.5 } else { 1.0 })
+            ;
+
         let expr: meval::Expr = shape.parse()?;
-        let shape_fun = expr.bind("t")?;
+        let shape_fun = expr.bind_with_context(ctx, "t")?;
 
         self.model_shapes.insert(model, Box::new(shape_fun));
 
@@ -122,7 +128,6 @@ impl Handler<UserStateChange> for SimulationActor {
             if let Some(u) = maybe_simulation_user {
                 u.state = msg.state;
                 u.trigger_hook(msg.state);
-
             }
         }
     }
