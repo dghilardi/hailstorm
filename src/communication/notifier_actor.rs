@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 use actix::{Actor, AsyncContext, Context, Handler, Recipient};
-use crate::communication::grpc::{AgentMessage, AgentUpdate};
+use crate::communication::protobuf::grpc::{AgentMessage, AgentUpdate};
 use crate::communication::message::{MultiAgentUpdateMessage, SendAgentMessage};
 
 #[derive(Default)]

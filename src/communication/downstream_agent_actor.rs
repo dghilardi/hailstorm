@@ -1,6 +1,6 @@
 use actix::{Actor, Context, Handler, ResponseFuture};
 use tokio::sync::mpsc::Sender;
-use crate::communication::grpc::ControllerCommand;
+use crate::communication::protobuf::grpc::ControllerCommand;
 use crate::communication::message::ControllerCommandMessage;
 
 pub struct DownstreamAgentActor {

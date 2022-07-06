@@ -62,8 +62,8 @@ async fn handle_messages(mut msg_stream: Streaming<AgentMessage>, sender: Sender
                 }
                 registered_agents
                     .retain(|_idx, update|
-                        update.timestamp.as_ref()
-                            .map(|ts| SystemTime::now().sub(Duration::from_secs(15)) < SystemTime::try_from(ts.clone()).unwrap())
+                        update.update_ts()
+                            .map(|ts| SystemTime::now().sub(Duration::from_secs(30)) < ts)
                             .unwrap_or(false)
                     );
 
@@ -72,7 +72,7 @@ async fn handle_messages(mut msg_stream: Streaming<AgentMessage>, sender: Sender
                         for model_stats in &upd.stats {
                             let model_acc = acc.entry(model_stats.model.clone())
                                 .or_insert_with(HashMap::new);
-                            for state_stats in &model_stats.states {
+                            for state_stats in model_stats.states.iter().flat_map(|s| s.states.iter()) {
                                 let acc_state_stats = model_acc.entry(state_stats.state_id)
                                     .or_insert(0);
                                 *acc_state_stats += state_stats.count;

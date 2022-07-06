@@ -4,8 +4,9 @@ use actix::{Actor, Addr, AsyncContext, Context};
 use futures::future::try_join_all;
 use tonic::transport::Server;
 use crate::agent::actor::AgentCoreActor;
+use crate::agent::metrics::manager_actor::MetricsManagerActor;
 use crate::communication::upstream_agent_actor::UpstreamAgentActor;
-use crate::communication::grpc;
+use crate::communication::protobuf::grpc;
 use crate::communication::notifier_actor::UpdatesNotifierActor;
 use crate::communication::server::HailstormGrpcServer;
 use crate::communication::server_actor::GrpcServerActor;
@@ -24,10 +25,12 @@ where
     ContextBuilder: FnOnce(Addr<SimulationActor>) -> rune::Context,
 {
     pub async fn launch(self) {
+        let metrics_addr = MetricsManagerActor::start_default();
+
         let simulation_ctx: Context<SimulationActor> = Context::new();
 
         let rune_context = (self.rune_context_builder)(simulation_ctx.address());
-        let user_registry = UserRegistry::new(rune_context).expect("Error during registry construction");
+        let user_registry = UserRegistry::new(rune_context, metrics_addr.clone()).expect("Error during registry construction");
 
         let updater_addr = UpdatesNotifierActor::create(|_| UpdatesNotifierActor::new());
         let server_actor = GrpcServerActor::create(|_| GrpcServerActor::new(updater_addr.clone().recipient()));
@@ -37,6 +40,7 @@ where
             updater_addr.clone(),
             server_actor.clone(),
             simulation_actor,
+            metrics_addr,
         ));
 
         if self.upstream.is_empty() {

@@ -5,8 +5,8 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Code, Request, Response, Status, Streaming};
-use crate::communication::grpc::{AgentMessage, ControllerCommand};
-use crate::communication::grpc::hailstorm_service_server::HailstormService;
+use crate::communication::protobuf::grpc::{AgentMessage, ControllerCommand};
+use crate::communication::protobuf::grpc::hailstorm_service_server::HailstormService;
 
 #[derive(actix::Message)]
 #[rtype(result = "()")]

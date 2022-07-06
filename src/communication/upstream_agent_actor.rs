@@ -12,9 +12,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::Streaming;
 use tonic::transport::Channel;
 use crate::agent::actor::{AgentCoreActor, RegisterAgentClientMsg};
-use crate::communication::grpc::hailstorm_service_client::HailstormServiceClient;
+use crate::communication::protobuf::grpc::hailstorm_service_client::HailstormServiceClient;
 use crate::communication::message::SendAgentMessage;
-use crate::grpc::{AgentMessage, ControllerCommand};
+use crate::communication::protobuf::grpc::{AgentMessage, ControllerCommand};
 
 struct UpstreamConnection {
     client: HailstormServiceClient<Channel>,
