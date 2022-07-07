@@ -88,7 +88,8 @@ impl SimulationActor {
                         // running number is as expected
                     }
                     Ordering::Greater => {
-                        for _idx in 0..(count - running_count) {
+                        let spawn_count = count - running_count;
+                        for _idx in 0..spawn_count {
                             model_users.spawn_user(ctx.address());
                         }
                     }
@@ -193,7 +194,12 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                     self.start_ts = Some(start_ts);
                 }
                 SimulationCommand::UpdateAgentsCount { count } => {
-                    self.agents_count = count;
+                    if count > 0 {
+                        self.agents_count = count;
+                    } else {
+                        log::warn!("Received agents_count = 0. setting it to 1");
+                        self.agents_count = 1;
+                    }
                 }
                 SimulationCommand::StopSimulation { reset } => {
                     self.start_ts = None;
