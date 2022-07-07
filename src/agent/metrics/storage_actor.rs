@@ -107,8 +107,6 @@ impl MetricsStorageActor {
 
                             status.histogram[idx] += 1;
                             status.sum += cs;
-
-                            log::debug!("centiseconds = {cs} idx = {idx} sum = {}", status.sum);
                         } else {
                             log::warn!("dropping pending timer '{}'", OffsetDateTime::from(*ts).format(&Rfc3339).unwrap_or_default());
                         }
