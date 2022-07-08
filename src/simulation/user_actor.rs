@@ -2,7 +2,7 @@ use std::time::Duration;
 use actix::{Actor, ActorContext, Addr, AsyncContext, AtomicResponse, Context, Handler, Message, WrapFuture, ActorFutureExt, Recipient};
 use rand::{Rng, thread_rng};
 use crate::simulation::simulation_actor::UserStateChange;
-use crate::simulation::user::registry::User;
+use crate::simulation::user::scripted_user::ScriptedUser;
 use crate::utils::actix::weak_context::WeakContext;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
@@ -29,14 +29,14 @@ impl From<UserState> for u32 {
 pub struct UserActor {
     user_id: u64,
     state_change_recipient: Recipient<UserStateChange>,
-    user: Option<User>,
+    user: Option<ScriptedUser>,
 }
 
 impl UserActor {
     pub fn new<A>(
         user_id: u64,
         simulation_addr: Addr<A>,
-        user: User,
+        user: ScriptedUser,
     ) -> Self
     where A: Actor<Context = Context<A>>
     + Handler<UserStateChange>

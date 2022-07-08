@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 use actix::{Actor, Addr, Handler};
-use rune::{Context, Diagnostics, Hash, Source, Sources, Unit, Value, Vm};
+use rune::{Context, Diagnostics, Hash, Source, Sources, Unit, Vm};
 use rune::compile::{Component, Item};
 use rune::runtime::debug::DebugArgs;
 use rune::runtime::RuntimeContext;
@@ -12,7 +11,7 @@ use crate::simulation::rune::extension::user::UserBehaviour;
 use crate::simulation::user::error::{LoadScriptError, UserError};
 use crate::simulation::user::model_factory::UserModelFactory;
 use crate::simulation::user::params::UserParams;
-use crate::simulation::user_actor::UserState;
+use crate::simulation::user::scripted_user::ScriptedUser;
 
 #[derive(Debug)]
 pub struct UserRegistry {
@@ -119,17 +118,19 @@ impl UserRegistry {
         !self.user_types.is_empty()
     }
 
-    pub fn build_user(&self, user_id: u64, model: &str) -> Option<User> {
+    pub fn build_user(&self, user_id: u64, model: &str) -> Option<ScriptedUser> {
         self.user_types
             .get(model)
-            .map(|b| {
+            .and_then(|b| {
                 let mut vm = rune::Vm::new(self.runtime.clone(), self.unit.clone());
                 let params = UserParams { user_id };
-                let instance = vm.call([model, "new"], (params, )).expect("Error construction");
-                User {
-                    behaviour: b.clone(),
-                    instance,
-                    vm,
+                let user_creation_result = vm.call([model, "new"], (params, ));
+                match user_creation_result {
+                    Ok(instance) => Some(ScriptedUser::new(b.clone(), instance, vm)),
+                    Err(e) => {
+                        log::error!("Error during '{model}' instantiation - {e}");
+                        None
+                    }
                 }
             })
     }
@@ -151,48 +152,6 @@ impl UserRegistry {
                 unit: self.unit.clone(),
             }
         )
-    }
-}
-
-pub struct User {
-    behaviour: UserBehaviour,
-    instance: Value,
-    vm: rune::Vm,
-}
-
-impl User {
-    pub(crate) fn new(
-        behaviour: UserBehaviour,
-        instance: Value,
-        vm: rune::Vm,
-    ) -> Self {
-        Self {
-            behaviour,
-            instance,
-            vm,
-        }
-    }
-
-    pub fn get_interval(&self) -> Duration {
-        self.behaviour.get_interval()
-    }
-
-    pub async fn run_random_action(&mut self) {
-        let action_hash = self.behaviour.random_action();
-        let action_out = self.vm.async_call(action_hash, (&self.instance, )).await;
-        if let Err(e) = action_out {
-            log::error!("Error executing action - {e}");
-        }
-    }
-
-    pub async fn trigger_hook(&mut self, state: UserState) {
-        let maybe_hook = self.behaviour.hook_action(state);
-        if let Some(hook) = maybe_hook {
-            let action_out = self.vm.async_call(hook, (&self.instance, )).await;
-            if let Err(e) = action_out {
-                log::error!("Error executing action - {e}");
-            }
-        }
     }
 }
 
