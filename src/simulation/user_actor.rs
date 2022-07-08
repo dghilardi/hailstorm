@@ -7,6 +7,7 @@ use crate::utils::actix::weak_context::WeakContext;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub enum UserState {
+    Idle,
     Initializing,
     Running,
     Stopping,
@@ -17,10 +18,11 @@ pub enum UserState {
 impl From<UserState> for u32 {
     fn from(state: UserState) -> Self {
         match state {
-            UserState::Initializing => 0,
-            UserState::Running => 1,
-            UserState::Stopping => 2,
-            UserState::Stopped => 3,
+            UserState::Idle => 0,
+            UserState::Initializing => 1,
+            UserState::Running => 2,
+            UserState::Stopping => 3,
+            UserState::Stopped => 4,
             UserState::Custom(cst) => 100 + cst,
         }
     }
