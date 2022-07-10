@@ -37,6 +37,11 @@ impl GrpcServerActor {
             downstream_agents: Default::default(),
         }
     }
+
+    fn connections_cleanup(&mut self) {
+        self.downstream_agents
+            .retain(|_id, conn| conn.sender.connected())
+    }
 }
 
 impl Handler<RegisterConnectedAgentMsg> for GrpcServerActor {
@@ -113,6 +118,7 @@ impl Handler<ControllerCommandMessage> for GrpcServerActor {
     type Result = ResponseFuture<()>;
 
     fn handle(&mut self, ControllerCommandMessage(msg): ControllerCommandMessage, _ctx: &mut Self::Context) -> Self::Result {
+        self.connections_cleanup();
         let connections = self.downstream_agents.values()
             .filter(|conn| match msg.target {
                 None => true,
@@ -126,7 +132,7 @@ impl Handler<ControllerCommandMessage> for GrpcServerActor {
             .map(|da| da.sender.clone())
             .collect::<Vec<_>>();
 
-        if connections.is_empty() {
+        if connections.is_empty() && !matches!(msg.target, None | Some(Target::Group(_))) {
             log::warn!("No connection available for target {:?}", msg.target);
         }
 
