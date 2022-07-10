@@ -116,17 +116,13 @@ impl ControllerActor {
 
     fn align_agents_simulation_state(&mut self, updates: &[AgentUpdate]) -> impl Future<Output=()> {
         for update in updates {
-            for model_stats in update.stats.iter() {
-                for states in model_stats.states.iter() {
-                    if let Some(timestamp) = states.timestamp.clone().map(SystemTime::try_from).transpose().ok().flatten() {
-                        let entry = self.agents_state.entry(update.agent_id)
-                            .or_insert(AgentState { timestamp, state: update.state() });
+            if let Some(timestamp) = update.timestamp.clone().map(SystemTime::try_from).transpose().ok().flatten() {
+                let entry = self.agents_state.entry(update.agent_id)
+                    .or_insert(AgentState { timestamp, state: update.state() });
 
-                        if entry.timestamp < timestamp {
-                            entry.timestamp = timestamp;
-                            entry.state = update.state();
-                        }
-                    }
+                if entry.timestamp < timestamp {
+                    entry.timestamp = timestamp;
+                    entry.state = update.state();
                 }
             }
         }
