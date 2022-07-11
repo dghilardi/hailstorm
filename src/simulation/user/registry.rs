@@ -157,28 +157,32 @@ impl UserRegistry {
 
 #[cfg(test)]
 mod test {
+    use crate::agent::metrics::manager_actor::MetricsManagerActor;
     use super::*;
 
-    #[test]
-    fn test_new_registry_creation() {
-        let mut registry = UserRegistry::new(Context::with_default_modules().unwrap()).unwrap();
+    #[actix::test]
+    async fn test_new_registry_creation() {
+        let metrics_addr = MetricsManagerActor::start_default();
+        let mut registry = UserRegistry::new(Context::with_default_modules().unwrap(), metrics_addr).unwrap();
         registry.load_script(r###"
+        use hailstorm::user::ActionTrigger;
+
         struct Demo { id }
         impl Demo {
             pub fn register_user(user) {
-                user.register_action(10.0, Self::do_something);
-                user.register_action(10.0, Self::do_something_else);
+                user.register_action(ActionTrigger::alive(10.0), Self::do_something);
+                user.register_action(ActionTrigger::alive(10.0), Self::do_something_else);
           }
-            pub fn new() {
-              Self { id: 10 }
-            }
-            pub async fn do_something(self) {
-                dbg(self)
-            }
-            pub async fn do_something_else(self) {
-                println("something else")
-            }
+          pub fn new() {
+            Self { id: 10 }
           }
+          pub async fn do_something(self) {
+              dbg(self)
+          }
+          pub async fn do_something_else(self) {
+              println("something else")
+          }
+        }
         "###).expect("Error building registry");
 
         assert!(registry.user_types.contains_key("Demo"));
