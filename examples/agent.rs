@@ -6,6 +6,8 @@ use serde::Deserialize;
 use hailstorm::agent::builder::AgentBuilder;
 use hailstorm::simulation::rune::extension;
 use hailstorm::simulation::rune::extension::env::EnvModuleConf;
+use hailstorm::simulation::rune::extension::storage::initializer::empty::EmptyInitializer;
+use hailstorm::simulation::rune::extension::storage::StorageModuleArgs;
 
 #[derive(Deserialize)]
 pub struct HailstormAgentConfig {
@@ -44,7 +46,7 @@ async fn main() {
             .unwrap_or_default(),
         rune_context_builder: |_sim| {
             let mut ctx = rune::Context::with_default_modules().expect("Error loading default rune modules");
-            ctx.install(&extension::storage::module().expect("Error initializing storage extension module")).expect("Error loading storage extension module");
+            ctx.install(&extension::storage::module(StorageModuleArgs { initializer: EmptyInitializer } ).expect("Error initializing storage extension module")).expect("Error loading storage extension module");
             ctx.install(&extension::env::module(EnvModuleConf { prefix: Some(String::from("hsa")) }).expect("Error initializing env extension module")).expect("Error loading env extension module");
 
             ctx
