@@ -25,12 +25,12 @@ struct CsvEntry {
 }
 
 impl CsvStorageInitializer {
-    pub fn new(dir: PathBuf, agent_id: u64) -> Result<Self, csv::Error> {
-        Ok(Self {
+    pub fn new(dir: PathBuf, agent_id: u64) -> Self {
+        Self {
             agent_id,
             base_path: dir,
             slices: Arc::new(Mutex::new(RefCell::new(Default::default()))),
-        })
+        }
     }
 
     fn load_slice(&self, name: &str) -> SliceInit {
