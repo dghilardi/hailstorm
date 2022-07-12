@@ -1,4 +1,3 @@
-use std::ops::Mul;
 use std::sync::Arc;
 use dashmap::DashMap;
 use crate::simulation::rune::extension::storage::initializer::StorageInitializerRegistry;
@@ -11,7 +10,7 @@ pub struct KeyValueStorage {
 
 #[derive(Default)]
 pub struct MultiStorage {
-    storages: DashMap<String, KeyValueStorage>
+    storages: DashMap<String, KeyValueStorage>,
 }
 
 pub struct StorageRegistry {
@@ -22,7 +21,7 @@ pub struct StorageRegistry {
 pub struct StorageSlice {
     user_id: u32,
     name: String,
-    storage: Arc<DashMap<u32, MultiStorage>>
+    storage: Arc<DashMap<u32, MultiStorage>>,
 }
 
 impl StorageSlice {
@@ -44,15 +43,18 @@ impl StorageRegistry {
     pub fn new(initializer: impl StorageInitializerRegistry + Send + Sync + 'static) -> Self {
         Self {
             initializer: Box::new(initializer),
-            storage: Arc::new(Default::default())
+            storage: Arc::new(Default::default()),
         }
     }
 
     pub fn get_user_storage(&self, name: &str, user_id: u32) -> UserStorage {
-        UserStorage::new(StorageSlice {
-            user_id,
-            name: name.to_string(),
-            storage: self.storage.clone(),
-        })
+        UserStorage::new(
+            self.initializer.initial_values_for(name, user_id),
+            StorageSlice {
+                user_id,
+                name: name.to_string(),
+                storage: self.storage.clone(),
+            }
+        )
     }
 }
