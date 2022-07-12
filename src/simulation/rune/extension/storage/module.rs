@@ -14,7 +14,7 @@ where
     let mut module = Module::with_crate_item("hailstorm", &["storage"]);
 
     let registry = StorageRegistry::new(args.initializer);
-    module.function(&["get_user_storage"], move |user_id| registry.get_user_storage(user_id))?;
+    module.function(&["get_user_storage"], move |name, user_id| registry.get_user_storage(name, user_id))?;
 
     module.ty::<UserStorage>()?;
     module.inst_fn("read", UserStorage::read)?;
