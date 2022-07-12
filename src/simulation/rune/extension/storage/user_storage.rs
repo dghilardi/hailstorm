@@ -1,29 +1,25 @@
-use std::sync::Arc;
-use dashmap::DashMap;
 use rune::Any;
+use crate::simulation::rune::extension::storage::registry::StorageSlice;
 
 #[derive(Any)]
 pub struct UserStorage {
-    user_id: u32,
-    storage: Arc<DashMap<(u32, String), String>>,
+    storage: StorageSlice,
 }
 
 impl UserStorage {
     pub fn new(
-        user_id: u32,
-        storage: Arc<DashMap<(u32, String), String>>,
+        storage: StorageSlice,
     ) -> Self {
         Self {
-            user_id,
             storage,
         }
     }
 
     pub fn read(&self, name: &str) -> Option<String> {
-        self.storage.get(&(self.user_id, name.to_string())).map(|v| v.clone())
+        self.storage.read(name)
     }
 
     pub fn write(&mut self, name: String, value: String) {
-        self.storage.insert((self.user_id, name), value);
+        self.storage.write(name, value);
     }
 }
