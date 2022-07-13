@@ -1,12 +1,13 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
-use actix::{Actor, AsyncContext, Context, Handler, Message, MessageResponse, WrapFuture};
+use actix::{Actor, AsyncContext, Context, Handler, Message, MessageResponse, ResponseFuture, WrapFuture};
 use futures::FutureExt;
 use crate::simulation::error::SimulationError;
+use crate::simulation::rune::types::value::OwnedValue;
 use crate::simulation::simulation_user_model::SimulationUserModel;
 use crate::simulation::user::registry::UserRegistry;
-use crate::simulation::user_actor::UserState;
+use crate::simulation::user_actor::{ActionExecutionError, ExecuteHandler, UserState};
 
 pub struct SimulationActor {
     agent_id: u64,
@@ -274,3 +275,30 @@ impl Handler<FetchSimulationStats> for SimulationActor {
     }
 }
 
+#[derive(Message)]
+#[rtype(result = "Result<OwnedValue, ActionExecutionError>")]
+pub struct InvokeHandler {
+    pub user_id: u64,
+    pub execution_args: ExecuteHandler,
+}
+
+impl Handler<InvokeHandler> for SimulationActor {
+    type Result = ResponseFuture<Result<OwnedValue, ActionExecutionError>>;
+
+    fn handle(&mut self, msg: InvokeHandler, _ctx: &mut Self::Context) -> Self::Result {
+        let user_id = msg.user_id;
+        let maybe_execution_fut = self.sim_users.iter_mut()
+            .filter_map(|(_m, u)| u.get_user_mut(user_id))
+            .next()
+            .map(|user| user.execute_handler(msg.execution_args.id, msg.execution_args.args));
+
+        Box::pin(async move {
+            if let Some(execution_fut) = maybe_execution_fut {
+                execution_fut.await
+                    .map_err(|e| ActionExecutionError::Internal(format!("Mailbox error - {e}")))?
+            } else {
+                Err(ActionExecutionError::Internal(format!("No user with id {user_id}")))
+            }
+        })
+    }
+}

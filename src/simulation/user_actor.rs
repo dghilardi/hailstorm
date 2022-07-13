@@ -43,8 +43,8 @@ impl UserActor {
         simulation_addr: Addr<A>,
         user: ScriptedUser,
     ) -> Self
-    where A: Actor<Context = Context<A>>
-    + Handler<UserStateChange>
+        where A: Actor<Context=Context<A>>
+        + Handler<UserStateChange>
     {
         Self {
             user_id,
@@ -103,6 +103,8 @@ pub enum ActionExecutionError {
     RuneError(String),
     #[error("User is currently occupied")]
     OccupiedUser,
+    #[error("Internal Error - {0}")]
+    Internal(String),
 }
 
 impl Handler<DoAction> for UserActor {

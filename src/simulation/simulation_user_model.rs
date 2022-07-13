@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use actix::{Actor, Addr, Context, Handler};
 use actix::dev::Request;
+use rune::Hash;
 use crate::simulation::compound_id::CompoundId;
+use crate::simulation::rune::types::value::OwnedValue;
 use crate::simulation::sequential_id_generator::SequentialIdGenerator;
 use crate::simulation::simulation_actor::UserStateChange;
 use crate::simulation::user::model_factory::UserModelFactory;
-use crate::simulation::user_actor::{StopUser, TriggerHook, UserActor, UserState};
+use crate::simulation::user_actor::{ExecuteHandler, StopUser, TriggerHook, UserActor, UserState};
 use crate::utils::varint::VarintDecode;
 pub struct SimulationUser {
     pub state: UserState,
@@ -24,6 +26,10 @@ impl SimulationUser {
 
     pub fn trigger_hook(&mut self, state: UserState) -> Request<UserActor, TriggerHook> {
         self.addr.send(TriggerHook { state })
+    }
+
+    pub fn execute_handler(&self, id: Hash, args: OwnedValue) -> Request<UserActor, ExecuteHandler> {
+        self.addr.send(ExecuteHandler { id, args })
     }
 
     pub fn state(&self) -> UserState {
