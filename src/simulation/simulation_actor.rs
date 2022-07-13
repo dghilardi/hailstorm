@@ -1,7 +1,8 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
-use actix::{Actor, AsyncContext, Context, Handler, Message, MessageResponse};
+use actix::{Actor, AsyncContext, Context, Handler, Message, MessageResponse, WrapFuture};
+use futures::FutureExt;
 use crate::simulation::error::SimulationError;
 use crate::simulation::simulation_user_model::SimulationUserModel;
 use crate::simulation::user::registry::UserRegistry;
@@ -114,7 +115,7 @@ pub struct UserStateChange {
 impl Handler<UserStateChange> for SimulationActor {
     type Result = ();
 
-    fn handle(&mut self, msg: UserStateChange, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: UserStateChange, ctx: &mut Self::Context) -> Self::Result {
         let model_entry = self.sim_users.iter_mut()
             .find(|(_m, u)| u.contains_id(msg.user_id));
 
@@ -128,7 +129,13 @@ impl Handler<UserStateChange> for SimulationActor {
 
             if let Some(u) = maybe_simulation_user {
                 u.state = msg.state;
-                u.trigger_hook(msg.state);
+                let hook_fut = u.trigger_hook(msg.state)
+                    .map(|res| match res {
+                        Ok(Ok(())) => {}
+                        Ok(Err(err)) => log::error!("Error during hook execution - {err}"),
+                        Err(mailbox_err) => log::error!("Mailbox error during hook execution - {mailbox_err}"),
+                    });
+                ctx.spawn(hook_fut.into_actor(self));
             }
         }
     }

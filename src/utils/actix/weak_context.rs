@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::time::Duration;
 use actix::{Actor, Addr, AsyncContext, Context};
 use tokio::task::JoinHandle;
@@ -6,14 +7,15 @@ pub trait WeakContext<A>: AsyncContext<A>
     where
         A: Actor<Context = Self>,
 {
-    fn run_interval_weak<F>(&mut self, dur: Duration, mut f: F) -> JoinHandle<()>
+    fn run_interval_weak<F, Fut>(&mut self, dur: Duration, mut f: F) -> JoinHandle<()>
         where
-            F: FnMut(Addr<A>) + 'static,
+            F: FnMut(Addr<A>) -> Fut + 'static,
+            Fut: Future
     {
         let weak_addr = self.address().downgrade();
         actix::spawn(async move {
             while let Some(address) = weak_addr.upgrade() {
-                f(address);
+                f(address).await;
                 actix::clock::sleep(dur).await;
             }
         })

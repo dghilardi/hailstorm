@@ -1,6 +1,9 @@
 use std::time::Duration;
 use actix::{Actor, ActorContext, Addr, AsyncContext, AtomicResponse, Context, Handler, Message, WrapFuture, ActorFutureExt, Recipient};
 use rand::{Rng, thread_rng};
+use rune::Hash;
+use thiserror::Error;
+use crate::simulation::rune::types::value::OwnedValue;
 use crate::simulation::simulation_actor::UserStateChange;
 use crate::simulation::user::scripted_user::ScriptedUser;
 use crate::utils::actix::weak_context::WeakContext;
@@ -59,7 +62,13 @@ impl Actor for UserActor {
         let interval = self.user.as_ref().expect("user not defined").get_interval();
         let random_delay = Duration::from_millis(thread_rng().gen_range(0..interval.as_millis() as u64));
         ctx.run_later(random_delay, move |_a, ctx| {
-            ctx.run_interval_weak(interval, |addr| addr.try_send(DoAction).unwrap_or_else(|e| log::error!("Error sending DoAction - {e}")));
+            ctx.run_interval_weak(interval, |addr| async move {
+                match addr.send(DoAction).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(err)) => log::error!("Error executing DoAction - {err}"),
+                    Err(err) => log::error!("Error sending DoAction - {err}"),
+                }
+            });
         });
     }
 
@@ -85,50 +94,93 @@ impl Handler<StopUser> for UserActor {
 }
 
 #[derive(Message)]
-#[rtype(result = "()")]
+#[rtype(result = "Result<(), ActionExecutionError>")]
 pub struct DoAction;
 
+#[derive(Error, Debug)]
+pub enum ActionExecutionError {
+    #[error("Error during rune execution - {0}")]
+    RuneError(String),
+    #[error("User is currently occupied")]
+    OccupiedUser,
+}
+
 impl Handler<DoAction> for UserActor {
-    type Result = AtomicResponse<Self, ()>;
+    type Result = AtomicResponse<Self, Result<(), ActionExecutionError>>;
 
     fn handle(&mut self, _msg: DoAction, _ctx: &mut Self::Context) -> Self::Result {
         if let Some(mut user) = self.user.take() {
             AtomicResponse::new(Box::pin(async {
-                user.run_random_action().await;
-                user
+                let res = user.run_random_action().await;
+                (user, res)
             }
                 .into_actor(self)
-                .map(|u, a, _c| a.user = Some(u))
+                .map(|(u, res), a, _c| {
+                    a.user = Some(u);
+                    res.map_err(|e| ActionExecutionError::RuneError(e.to_string()))
+                })
             ))
         } else {
             log::warn!("User is occupied");
-            AtomicResponse::new(Box::pin(futures::future::ready(()).into_actor(self)))
+            AtomicResponse::new(Box::pin(futures::future::err(ActionExecutionError::OccupiedUser).into_actor(self)))
         }
     }
 }
 
 
 #[derive(Message)]
-#[rtype(result = "()")]
+#[rtype(result = "Result<(), ActionExecutionError>")]
 pub struct TriggerHook {
     pub state: UserState,
 }
 
 impl Handler<TriggerHook> for UserActor {
-    type Result = AtomicResponse<Self, ()>;
+    type Result = AtomicResponse<Self, Result<(), ActionExecutionError>>;
 
     fn handle(&mut self, TriggerHook { state }: TriggerHook, _ctx: &mut Self::Context) -> Self::Result {
         if let Some(mut user) = self.user.take() {
             AtomicResponse::new(Box::pin(async move {
-                user.trigger_hook(state).await;
-                user
+                let res = user.trigger_hook(state).await;
+                (user, res)
             }
                 .into_actor(self)
-                .map(|u, a, _c| a.user = Some(u))
+                .map(|(u, res), a, _c| {
+                    a.user = Some(u);
+                    res.map_err(|e| ActionExecutionError::RuneError(e.to_string()))
+                })
             ))
         } else {
             log::warn!("User is occupied");
-            AtomicResponse::new(Box::pin(futures::future::ready(()).into_actor(self)))
+            AtomicResponse::new(Box::pin(futures::future::err(ActionExecutionError::OccupiedUser).into_actor(self)))
+        }
+    }
+}
+
+#[derive(Message)]
+#[rtype(result = "Result<OwnedValue, ActionExecutionError>")]
+pub struct ExecuteHandler {
+    pub id: Hash,
+    pub args: OwnedValue,
+}
+
+impl Handler<ExecuteHandler> for UserActor {
+    type Result = AtomicResponse<Self, Result<OwnedValue, ActionExecutionError>>;
+
+    fn handle(&mut self, msg: ExecuteHandler, _ctx: &mut Self::Context) -> Self::Result {
+        if let Some(mut user) = self.user.take() {
+            AtomicResponse::new(Box::pin(async move {
+                let out = user.execute_handler(msg.id, msg.args).await;
+                (user, out)
+            }
+                .into_actor(self)
+                .map(|(u, out), a, _c| {
+                    a.user = Some(u);
+                    out.map_err(|e| ActionExecutionError::RuneError(e.to_string()))
+                })
+            ))
+        } else {
+            log::warn!("User is occupied");
+            AtomicResponse::new(Box::pin(futures::future::err(ActionExecutionError::OccupiedUser).into_actor(self)))
         }
     }
 }

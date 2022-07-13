@@ -6,7 +6,7 @@ use rune::runtime::{Function, VmError};
 
 use crate::agent::metrics::manager_actor::{StartActionTimer, StartedActionTimer, StopActionTimer};
 use crate::agent::metrics::timer::{ActionOutcome, ExecutionInfo};
-use crate::simulation::rune::extension::metrics::model::ActionResult;
+use crate::simulation::rune::types::value::OwnedValue;
 
 #[derive(Any)]
 pub struct PerformanceRegistry {
@@ -48,12 +48,12 @@ impl PerformanceRegistry {
             .map_err(VmError::panic)
     }
 
-    pub async fn observe(&self, name: &str, action: Function) -> Result<ActionResult, VmError> {
+    pub async fn observe(&self, name: &str, action: Function) -> Result<OwnedValue, VmError> {
         let timer = self.start_timer(name).await?;
         let before = Instant::now();
         let res = action.async_send_call(()).await;
         let elapsed = before.elapsed();
-        self.stop_timer(timer, elapsed, res.as_ref().map(ActionResult::extract_status).unwrap_or(-1)).await?;
+        self.stop_timer(timer, elapsed, res.as_ref().map(OwnedValue::extract_status).unwrap_or(-1)).await?;
         res
     }
 }

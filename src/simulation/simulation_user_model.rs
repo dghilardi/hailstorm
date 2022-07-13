@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use actix::{Actor, Addr, Context, Handler};
+use actix::dev::Request;
 use crate::simulation::compound_id::CompoundId;
 use crate::simulation::sequential_id_generator::SequentialIdGenerator;
 use crate::simulation::simulation_actor::UserStateChange;
@@ -21,11 +22,8 @@ impl SimulationUser {
         }
     }
 
-    pub fn trigger_hook(&mut self, state: UserState) {
-        let send_outcome = self.addr.try_send(TriggerHook { state });
-        if let Err(err) = send_outcome {
-            log::error!("Error triggering hook {:?} - {}", state, err);
-        }
+    pub fn trigger_hook(&mut self, state: UserState) -> Request<UserActor, TriggerHook> {
+        self.addr.send(TriggerHook { state })
     }
 
     pub fn state(&self) -> UserState {

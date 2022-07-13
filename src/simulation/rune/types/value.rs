@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use rune::{FromValue, ToValue, Value};
 use rune::runtime::{Bytes, Shared, StaticString, UnitStruct, VmError};
+use crate::simulation::rune::types::object::OwnedObject;
 
-pub enum ActionResult {
+pub enum OwnedValue {
     /// The unit value.
     Unit,
     /// A boolean.
@@ -28,36 +29,39 @@ pub enum ActionResult {
     String(String),
     /// A byte string.
     Bytes(Bytes),
+    /// An object.
+    Object(OwnedObject),
     /// An empty value indicating nothing.
-    Option(Option<Box<ActionResult>>),
+    Option(Option<Box<OwnedValue>>),
     /// A stored result in a slot.
-    Result(Result<Box<ActionResult>, Box<ActionResult>>),
+    Result(Result<Box<OwnedValue>, Box<OwnedValue>>),
     /// An struct with a well-defined type.
     UnitStruct(UnitStruct),
 }
 
-impl ActionResult {
+impl OwnedValue {
     pub fn extract_status(&self) -> i64 {
         match self {
-            ActionResult::Unit => 0,
-            ActionResult::Bool(_) => 0,
-            ActionResult::Byte(_) => 0,
-            ActionResult::Char(_) => 0,
-            ActionResult::Integer(v) => *v,
-            ActionResult::Float(_) => 0,
-            ActionResult::StaticString(_) => 0,
-            ActionResult::String(_) => 0,
-            ActionResult::Bytes(_) => 0,
-            ActionResult::Option(None) => -1,
-            ActionResult::Option(Some(v)) => v.extract_status(),
-            ActionResult::Result(Ok(v)) => v.extract_status(),
-            ActionResult::Result(Err(v)) => v.extract_status(),
-            ActionResult::UnitStruct(_) => 0,
+            OwnedValue::Unit => 0,
+            OwnedValue::Bool(_) => 0,
+            OwnedValue::Byte(_) => 0,
+            OwnedValue::Char(_) => 0,
+            OwnedValue::Integer(v) => *v,
+            OwnedValue::Float(_) => 0,
+            OwnedValue::StaticString(_) => 0,
+            OwnedValue::String(_) => 0,
+            OwnedValue::Bytes(_) => 0,
+            OwnedValue::Option(None) => -1,
+            OwnedValue::Option(Some(v)) => v.extract_status(),
+            OwnedValue::Result(Ok(v)) => v.extract_status(),
+            OwnedValue::Result(Err(v)) => v.extract_status(),
+            OwnedValue::UnitStruct(_) => 0,
+            OwnedValue::Object(_) => 0,
         }
     }
 }
 
-impl FromValue for ActionResult {
+impl FromValue for OwnedValue {
     fn from_value(value: Value) -> Result<Self, VmError> {
         match value {
             Value::Unit => Ok(Self::Unit),
@@ -72,20 +76,24 @@ impl FromValue for ActionResult {
             Value::Bytes(v) => Ok(Self::Bytes(v.take()?)),
             Value::Vec(_) => Err(VmError::panic("Unexpected action return type 'Value::Vec'")),
             Value::Tuple(_) => Err(VmError::panic("Unexpected action return type 'Value::Tuple'")),
-            Value::Object(_) => Err(VmError::panic("Unexpected action return type 'Value::Object'")),
+            Value::Object(v) => Ok(Self::Object(OwnedObject::from_iter(
+                v.take()?.into_iter()
+                    .map(|(k, v)| OwnedValue::from_value(v).map(|v| (k, v)))
+                    .collect::<Result<Vec<_>, _>>()?
+            ))),
             Value::Range(_) => Err(VmError::panic("Unexpected action return type 'Value::Range'")),
             Value::Future(_) => Err(VmError::panic("Unexpected action return type 'Value::Future'")),
             Value::Stream(_) => Err(VmError::panic("Unexpected action return type 'Value::Stream'")),
             Value::Generator(_) => Err(VmError::panic("Unexpected action return type 'Value::Generator'")),
             Value::GeneratorState(_) => Err(VmError::panic("Unexpected action return type 'Value::GeneratorState'")),
-            Value::Option(v) => Ok(Self::Option(v.take()?.map(ActionResult::from_value).transpose()?.map(Box::new))),
+            Value::Option(v) => Ok(Self::Option(v.take()?.map(OwnedValue::from_value).transpose()?.map(Box::new))),
             Value::Result(v) => {
                 let res = match v.take()? {
-                    Ok(ok) => Ok(Box::new(ActionResult::from_value(ok)?)),
-                    Err(err) => Err(Box::new(ActionResult::from_value(err)?)),
+                    Ok(ok) => Ok(Box::new(OwnedValue::from_value(ok)?)),
+                    Err(err) => Err(Box::new(OwnedValue::from_value(err)?)),
                 };
-                Ok(ActionResult::Result(res))
-            },
+                Ok(OwnedValue::Result(res))
+            }
             Value::UnitStruct(v) => Ok(Self::UnitStruct(v.take()?)),
             Value::TupleStruct(_) => Err(VmError::panic("Unexpected action return type 'Value::TupleStruct'")),
             Value::Struct(_) => Err(VmError::panic("Unexpected action return type 'Value::Struct'")),
@@ -98,33 +106,40 @@ impl FromValue for ActionResult {
     }
 }
 
-impl ToValue for ActionResult {
+impl ToValue for OwnedValue {
     fn to_value(self) -> Result<Value, VmError> {
         match self {
-            ActionResult::Unit => Ok(Value::Unit),
-            ActionResult::Bool(v) => Ok(Value::Bool(v)),
-            ActionResult::Byte(v) => Ok(Value::Byte(v)),
-            ActionResult::Char(v) => Ok(Value::Char(v)),
-            ActionResult::Integer(v) => Ok(Value::Integer(v)),
-            ActionResult::Float(v) => Ok(Value::Float(v)),
-            ActionResult::StaticString(v) => Ok(Value::StaticString(v)),
-            ActionResult::String(v) => Ok(Value::String(Shared::new(v))),
-            ActionResult::Bytes(v) => Ok(Value::Bytes(Shared::new(v))),
-            ActionResult::Option(v) => {
+            OwnedValue::Unit => Ok(Value::Unit),
+            OwnedValue::Bool(v) => Ok(Value::Bool(v)),
+            OwnedValue::Byte(v) => Ok(Value::Byte(v)),
+            OwnedValue::Char(v) => Ok(Value::Char(v)),
+            OwnedValue::Integer(v) => Ok(Value::Integer(v)),
+            OwnedValue::Float(v) => Ok(Value::Float(v)),
+            OwnedValue::StaticString(v) => Ok(Value::StaticString(v)),
+            OwnedValue::String(v) => Ok(Value::String(Shared::new(v))),
+            OwnedValue::Bytes(v) => Ok(Value::Bytes(Shared::new(v))),
+            OwnedValue::Option(v) => {
                 let res = match v {
                     None => None,
-                    Some(value) => Some(ActionResult::to_value(*value)?),
+                    Some(value) => Some(OwnedValue::to_value(*value)?),
                 };
                 Ok(Value::Option(Shared::new(res)))
-            },
-            ActionResult::Result(v) => {
+            }
+            OwnedValue::Result(v) => {
                 let res = match v {
-                    Ok(ok) => Ok(ActionResult::to_value(*ok)?),
-                    Err(err) => Err(ActionResult::to_value(*err)?),
+                    Ok(ok) => Ok(OwnedValue::to_value(*ok)?),
+                    Err(err) => Err(OwnedValue::to_value(*err)?),
                 };
                 Ok(Value::Result(Shared::new(res)))
-            },
-            ActionResult::UnitStruct(v) => Ok(Value::UnitStruct(Shared::new(v))),
+            }
+            OwnedValue::UnitStruct(v) => Ok(Value::UnitStruct(Shared::new(v))),
+            OwnedValue::Object(obj) => Ok(Value::Object(Shared::new(
+                rune::runtime::Object::from_iter(
+                    obj.into_iter()
+                        .map(|(k, v)| v.to_value().map(|v| (k, v)))
+                        .collect::<Result<Vec<_>, _>>()?
+                )
+            )))
         }
     }
 }
