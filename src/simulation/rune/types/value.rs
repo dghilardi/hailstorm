@@ -2,6 +2,7 @@ use std::sync::Arc;
 use rune::{FromValue, ToValue, Value};
 use rune::runtime::{Bytes, Shared, StaticString, UnitStruct, VmError};
 use crate::simulation::rune::types::object::OwnedObject;
+use crate::simulation::rune::types::vec::OwnedVec;
 
 pub enum OwnedValue {
     /// The unit value.
@@ -29,6 +30,8 @@ pub enum OwnedValue {
     String(String),
     /// A byte string.
     Bytes(Bytes),
+    /// A vector.
+    Vec(OwnedVec),
     /// An object.
     Object(OwnedObject),
     /// An empty value indicating nothing.
@@ -57,6 +60,7 @@ impl OwnedValue {
             OwnedValue::Result(Err(v)) => v.extract_status(),
             OwnedValue::UnitStruct(_) => 0,
             OwnedValue::Object(_) => 0,
+            OwnedValue::Vec(_) => 0,
         }
     }
 }
@@ -74,7 +78,7 @@ impl FromValue for OwnedValue {
             Value::StaticString(v) => Ok(Self::StaticString(v)),
             Value::String(v) => Ok(Self::String(v.take()?)),
             Value::Bytes(v) => Ok(Self::Bytes(v.take()?)),
-            Value::Vec(_) => Err(VmError::panic("Unexpected action return type 'Value::Vec'")),
+            Value::Vec(v) => Ok(Self::Vec(OwnedVec::from_iter(v.take()?.into_iter().map(|i| OwnedValue::from_value(i)).collect::<Result<Vec<_>, _>>()?))),
             Value::Tuple(_) => Err(VmError::panic("Unexpected action return type 'Value::Tuple'")),
             Value::Object(v) => Ok(Self::Object(OwnedObject::from_iter(
                 v.take()?.into_iter()
@@ -139,6 +143,9 @@ impl ToValue for OwnedValue {
                         .map(|(k, v)| v.to_value().map(|v| (k, v)))
                         .collect::<Result<Vec<_>, _>>()?
                 )
+            ))),
+            OwnedValue::Vec(vec) => Ok(Value::Vec(Shared::new(
+                vec.into_iter().map(OwnedValue::to_value).collect::<Result<Vec<_>, _>>()?.into()
             )))
         }
     }
