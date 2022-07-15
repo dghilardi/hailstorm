@@ -17,7 +17,7 @@ struct ConnectedAgent {
 }
 
 struct DownstreamConnection {
-    agent_ids: HashMap<u64, ConnectedAgent>,
+    agent_ids: HashMap<u32, ConnectedAgent>,
     sender: Addr<DownstreamAgentActor>,
 }
 

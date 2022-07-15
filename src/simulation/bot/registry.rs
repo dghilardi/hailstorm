@@ -12,6 +12,7 @@ use crate::simulation::bot::error::{LoadScriptError, BotError};
 use crate::simulation::bot::model_factory::BotModelFactory;
 use crate::simulation::bot::params::BotParams;
 use crate::simulation::bot::scripted::ScriptedBot;
+use crate::simulation::compound_id::CompoundId;
 
 #[derive(Debug)]
 pub struct BotRegistry {
@@ -118,12 +119,16 @@ impl BotRegistry {
         !self.bot_types.is_empty()
     }
 
-    pub fn build_bot(&self, bot_id: u64, model: &str) -> Option<ScriptedBot> {
+    pub fn build_bot(&self, compound_id: CompoundId<u32>, model: &str) -> Option<ScriptedBot> {
         self.bot_types
             .get(model)
             .and_then(|b| {
                 let mut vm = rune::Vm::new(self.runtime.clone(), self.unit.clone());
-                let params = BotParams { bot_id };
+                let params = BotParams {
+                    bot_id: compound_id.bot_id(),
+                    internal_id: compound_id.internal_id(),
+                    global_id: compound_id.global_id(),
+                };
                 let bot_creation_result = vm.call([model, "new"], (params, ));
                 match bot_creation_result {
                     Ok(instance) => Some(ScriptedBot::new(b.clone(), instance, vm)),

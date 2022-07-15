@@ -29,7 +29,7 @@ struct AggregatedBotStateMetric {
 }
 
 pub struct AgentCoreActor {
-    agent_id: u64,
+    agent_id: u32,
     notifier_addr: Addr<UpdatesNotifierActor>,
     server_addr: Addr<GrpcServerActor>,
     simulation_addr: Addr<SimulationActor>,
@@ -39,7 +39,7 @@ pub struct AgentCoreActor {
 
 impl AgentCoreActor {
     pub fn new(
-        agent_id: u64,
+        agent_id: u32,
         notifier_addr: Addr<UpdatesNotifierActor>,
         server_addr: Addr<GrpcServerActor>,
         simulation_addr: Addr<SimulationActor>,

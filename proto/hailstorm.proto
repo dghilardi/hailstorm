@@ -9,7 +9,7 @@ message AgentMessage {
 }
 
 message AgentUpdate {
-  uint64 agent_id = 1;
+  uint32 agent_id = 1;
   repeated ModelStats stats = 2;
   uint64 update_id = 3;
   google.protobuf.Timestamp timestamp = 4;
@@ -61,7 +61,7 @@ enum AgentGroup {
 message ControllerCommand {
   oneof target {
     AgentGroup group = 1;
-    uint64 agent_id = 2;
+    uint32 agent_id = 2;
     MultiAgent agents = 3;
   }
   repeated CommandItem commands = 10;
@@ -77,7 +77,7 @@ message CommandItem {
 }
 
 message MultiAgent {
-  repeated uint64 agent_ids = 1;
+  repeated uint32 agent_ids = 1;
 }
 
 message LaunchCommand {

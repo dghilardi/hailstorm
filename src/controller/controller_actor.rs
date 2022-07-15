@@ -22,7 +22,7 @@ struct AgentState {
 pub struct ControllerActor {
     command_sender: Recipient<ControllerCommandMessage>,
     metrics_storage: Recipient<MultiAgentUpdateMessage>,
-    agents_state: HashMap<u64, AgentState>,
+    agents_state: HashMap<u32, AgentState>,
     simulation: SimulationState,
 }
 
@@ -82,14 +82,14 @@ impl ControllerActor {
         self.agents_state.len()
     }
 
-    fn send_to_agent(&mut self, agent_id: u64, commands: Vec<Command>) -> RecipientRequest<ControllerCommandMessage> {
+    fn send_to_agent(&mut self, agent_id: u32, commands: Vec<Command>) -> RecipientRequest<ControllerCommandMessage> {
         self.command_sender.send(ControllerCommandMessage(ControllerCommand {
             commands: commands.into_iter().map(|cmd| CommandItem { command: Some(cmd) }).collect(),
             target: Some(Target::AgentId(agent_id)),
         }))
     }
 
-    fn send_to_agents(&mut self, agent_ids: Vec<u64>, commands: Vec<Command>) -> RecipientRequest<ControllerCommandMessage> {
+    fn send_to_agents(&mut self, agent_ids: Vec<u32>, commands: Vec<Command>) -> RecipientRequest<ControllerCommandMessage> {
         self.command_sender.send(ControllerCommandMessage(ControllerCommand {
             commands: commands.into_iter().map(|cmd| CommandItem { command: Some(cmd) }).collect(),
             target: Some(Target::Agents(MultiAgent { agent_ids })),
@@ -107,7 +107,7 @@ impl ControllerActor {
         self.send_broadcast(self.generate_simulation_state_commands())
     }
 
-    fn misaligned_agents(&self) -> HashMap<u64, AgentState> {
+    fn misaligned_agents(&self) -> HashMap<u32, AgentState> {
         self.agents_state.iter()
             .filter(|(_, agent)| !self.simulation.is_aligned(&agent.state))
             .map(|(k, v)| (*k, v.clone()))

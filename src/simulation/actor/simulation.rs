@@ -10,7 +10,7 @@ use crate::simulation::bot::registry::BotRegistry;
 use crate::simulation::actor::bot::{ActionExecutionError, ExecuteHandler, BotState};
 
 pub struct SimulationActor {
-    agent_id: u64,
+    agent_id: u32,
     start_ts: Option<SystemTime>,
     bot_registry: BotRegistry,
     agents_count: u32,
@@ -27,7 +27,7 @@ impl Actor for SimulationActor {
 }
 
 impl SimulationActor {
-    pub fn new(agent_id: u64, bot_registry: BotRegistry) -> Self {
+    pub fn new(agent_id: u32, bot_registry: BotRegistry) -> Self {
         Self {
             agent_id,
             start_ts: None,
@@ -53,7 +53,7 @@ impl SimulationActor {
         Ok(())
     }
 
-    fn normalize_count(global_count: f64, agent_id: u64, agents_count: u64) -> usize {
+    fn normalize_count(global_count: f64, agent_id: u32, agents_count: u32) -> usize {
         let shift = (agent_id % agents_count) as f64 / agents_count as f64;
         ((global_count / agents_count as f64) + shift).floor() as usize
     }
@@ -70,7 +70,7 @@ impl SimulationActor {
         if let Some(elapsed) = maybe_elapsed {
             for (model_name, shape) in self.model_shapes.iter() {
                 let shape_val = shape(elapsed);
-                let count = Self::normalize_count(shape_val, self.agent_id, self.agents_count as u64);
+                let count = Self::normalize_count(shape_val, self.agent_id, self.agents_count);
 
                 let model = if let Some(mu) = self.bots.get_mut(model_name) {
                     mu
@@ -196,6 +196,7 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                         .enumerate()
                         .for_each(|(idx, model)| {
                             self.bots.insert(model.to_string(), BotModel::new(
+                                self.agent_id,
                                 idx as u32,
                                 self.bot_registry.build_factory(model)
                                     .unwrap_or_else(|| panic!("No factory for {model}")),

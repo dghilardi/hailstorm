@@ -10,6 +10,7 @@ use hailstorm::simulation::rune::extension::storage::StorageModuleArgs;
 use hailstorm::simulation::actor::simulation::BotStateChange;
 use hailstorm::simulation::bot::registry::BotRegistry;
 use hailstorm::simulation::actor::bot::BotActor;
+use hailstorm::simulation::compound_id::CompoundId;
 
 struct StateChangeLoggerActor;
 
@@ -53,8 +54,10 @@ async fn main() {
 
     let state_change_logger_actor = StateChangeLoggerActor::create(|_| StateChangeLoggerActor);
 
-    let bot = registry.build_bot(1, &args.model).unwrap_or_else(|| panic!("No bot found with model {}", args.model));
-    let actor = BotActor::new(1, state_change_logger_actor, bot);
+    let compound_id = CompoundId::new(1, 1, 1);
+    let internal_id = compound_id.internal_id();
+    let bot = registry.build_bot(compound_id, &args.model).unwrap_or_else(|| panic!("No bot found with model {}", args.model));
+    let actor = BotActor::new(internal_id, state_change_logger_actor, bot);
     let _addr = actor.start();
 
     actix::clock::sleep(Duration::from_secs(60)).await;

@@ -14,7 +14,7 @@ use crate::simulation::actor::simulation::SimulationActor;
 use crate::simulation::bot::registry::BotRegistry;
 
 pub struct AgentBuilder <ContextBuilder> {
-    pub agent_id: u64,
+    pub agent_id: u32,
     pub address: SocketAddr,
     pub upstream: HashMap<String, String>,
     pub rune_context_builder: ContextBuilder,

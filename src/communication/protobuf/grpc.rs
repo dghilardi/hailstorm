@@ -3,7 +3,7 @@ use crate::communication::protobuf::grpc::controller_command::Target;
 tonic::include_proto!("hailstorm");
 
 impl Target {
-    pub fn includes_agent(&self, agent_id: u64) -> bool {
+    pub fn includes_agent(&self, agent_id: u32) -> bool {
         match self {
             Target::Group(grp_id) => match AgentGroup::from_i32(*grp_id) {
                 Some(AgentGroup::All) => true,

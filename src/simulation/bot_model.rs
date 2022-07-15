@@ -42,6 +42,7 @@ impl SimulationBot {
 }
 
 pub struct BotModel {
+    agent_id: u32,
     model_id: u32,
     id_generator: SequentialIdGenerator,
     bot_factory: BotModelFactory,
@@ -49,8 +50,9 @@ pub struct BotModel {
 }
 
 impl BotModel {
-    pub fn new(model_id: u32, factory: BotModelFactory) -> Self {
+    pub fn new(agent_id: u32, model_id: u32, factory: BotModelFactory) -> Self {
         Self {
+            agent_id,
             model_id,
             bot_factory: factory,
             id_generator: Default::default(),
@@ -63,9 +65,9 @@ impl BotModel {
         + Handler<BotStateChange>
     {
         let usr_id = self.id_generator.next();
-        let compound_id = CompoundId::new((), self.model_id, usr_id);
+        let compound_id = CompoundId::new(self.agent_id, self.model_id, usr_id);
         let internal_id = compound_id.internal_id();
-        let bot_behaviour = self.bot_factory.new_bot(internal_id);
+        let bot_behaviour = self.bot_factory.new_bot(compound_id);
 
         self.bots.insert(internal_id, SimulationBot {
             state: BotState::Running,

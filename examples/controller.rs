@@ -52,7 +52,7 @@ async fn initialize_agents(
 }
 
 async fn handle_messages(mut msg_stream: Streaming<AgentMessage>, sender: Sender<ControllerCommand>) {
-    let mut registered_agents = HashMap::<u64, AgentUpdate>::new();
+    let mut registered_agents = HashMap::<u32, AgentUpdate>::new();
     while let Some(msg_res) = msg_stream.next().await {
         match msg_res {
             Ok(msg) => {
