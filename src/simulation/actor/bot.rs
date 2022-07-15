@@ -4,12 +4,12 @@ use rand::{Rng, thread_rng};
 use rune::Hash;
 use thiserror::Error;
 use crate::simulation::rune::types::value::OwnedValue;
-use crate::simulation::simulation_actor::UserStateChange;
-use crate::simulation::user::scripted_user::ScriptedUser;
+use crate::simulation::actor::simulation::BotStateChange;
+use crate::simulation::bot::scripted::ScriptedBot;
 use crate::utils::actix::weak_context::WeakContext;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
-pub enum UserState {
+pub enum BotState {
     Idle,
     Initializing,
     Running,
@@ -18,48 +18,48 @@ pub enum UserState {
     Custom(u32),
 }
 
-impl From<UserState> for u32 {
-    fn from(state: UserState) -> Self {
+impl From<BotState> for u32 {
+    fn from(state: BotState) -> Self {
         match state {
-            UserState::Idle => 0,
-            UserState::Initializing => 1,
-            UserState::Running => 2,
-            UserState::Stopping => 3,
-            UserState::Stopped => 4,
-            UserState::Custom(cst) => 100 + cst,
+            BotState::Idle => 0,
+            BotState::Initializing => 1,
+            BotState::Running => 2,
+            BotState::Stopping => 3,
+            BotState::Stopped => 4,
+            BotState::Custom(cst) => 100 + cst,
         }
     }
 }
 
-pub struct UserActor {
-    user_id: u64,
-    state_change_recipient: Recipient<UserStateChange>,
-    user: Option<ScriptedUser>,
+pub struct BotActor {
+    bot_id: u64,
+    state_change_recipient: Recipient<BotStateChange>,
+    bot: Option<ScriptedBot>,
 }
 
-impl UserActor {
+impl BotActor {
     pub fn new<A>(
-        user_id: u64,
+        bot_id: u64,
         simulation_addr: Addr<A>,
-        user: ScriptedUser,
+        bot: ScriptedBot,
     ) -> Self
         where A: Actor<Context=Context<A>>
-        + Handler<UserStateChange>
+        + Handler<BotStateChange>
     {
         Self {
-            user_id,
+            bot_id,
             state_change_recipient: simulation_addr.recipient(),
-            user: Some(user),
+            bot: Some(bot),
         }
     }
 }
 
-impl Actor for UserActor {
+impl Actor for BotActor {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        log::debug!("User actor started");
-        let interval = self.user.as_ref().expect("user not defined").get_interval();
+        log::debug!("Bot actor started");
+        let interval = self.bot.as_ref().expect("bot not defined").get_interval();
         let random_delay = Duration::from_millis(thread_rng().gen_range(0..interval.as_millis() as u64));
         ctx.run_later(random_delay, move |_a, ctx| {
             ctx.run_interval_weak(interval, |addr| async move {
@@ -73,22 +73,22 @@ impl Actor for UserActor {
     }
 
     fn stopped(&mut self, _ctx: &mut Self::Context) {
-        log::debug!("User actor stopped");
-        self.state_change_recipient.try_send(UserStateChange {
-            user_id: self.user_id,
-            state: UserState::Stopped,
-        }).unwrap_or_else(|e| log::error!("Error sending stopped user state - {e}"));
+        log::debug!("Bot actor stopped");
+        self.state_change_recipient.try_send(BotStateChange {
+            bot_id: self.bot_id,
+            state: BotState::Stopped,
+        }).unwrap_or_else(|e| log::error!("Error sending stopped bot state - {e}"));
     }
 }
 
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct StopUser;
+pub struct StopBot;
 
-impl Handler<StopUser> for UserActor {
+impl Handler<StopBot> for BotActor {
     type Result = ();
 
-    fn handle(&mut self, _msg: StopUser, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: StopBot, ctx: &mut Self::Context) -> Self::Result {
         ctx.stop();
     }
 }
@@ -101,30 +101,30 @@ pub struct DoAction;
 pub enum ActionExecutionError {
     #[error("Error during rune execution - {0}")]
     RuneError(String),
-    #[error("User is currently occupied")]
-    OccupiedUser,
+    #[error("Bot is currently occupied")]
+    OccupiedBot,
     #[error("Internal Error - {0}")]
     Internal(String),
 }
 
-impl Handler<DoAction> for UserActor {
+impl Handler<DoAction> for BotActor {
     type Result = AtomicResponse<Self, Result<(), ActionExecutionError>>;
 
     fn handle(&mut self, _msg: DoAction, _ctx: &mut Self::Context) -> Self::Result {
-        if let Some(mut user) = self.user.take() {
+        if let Some(mut bot) = self.bot.take() {
             AtomicResponse::new(Box::pin(async {
-                let res = user.run_random_action().await;
-                (user, res)
+                let res = bot.run_random_action().await;
+                (bot, res)
             }
                 .into_actor(self)
                 .map(|(u, res), a, _c| {
-                    a.user = Some(u);
+                    a.bot = Some(u);
                     res.map_err(|e| ActionExecutionError::RuneError(e.to_string()))
                 })
             ))
         } else {
-            log::warn!("User is occupied");
-            AtomicResponse::new(Box::pin(futures::future::err(ActionExecutionError::OccupiedUser).into_actor(self)))
+            log::warn!("Bot is occupied");
+            AtomicResponse::new(Box::pin(futures::future::err(ActionExecutionError::OccupiedBot).into_actor(self)))
         }
     }
 }
@@ -133,27 +133,27 @@ impl Handler<DoAction> for UserActor {
 #[derive(Message)]
 #[rtype(result = "Result<(), ActionExecutionError>")]
 pub struct TriggerHook {
-    pub state: UserState,
+    pub state: BotState,
 }
 
-impl Handler<TriggerHook> for UserActor {
+impl Handler<TriggerHook> for BotActor {
     type Result = AtomicResponse<Self, Result<(), ActionExecutionError>>;
 
     fn handle(&mut self, TriggerHook { state }: TriggerHook, _ctx: &mut Self::Context) -> Self::Result {
-        if let Some(mut user) = self.user.take() {
+        if let Some(mut bot) = self.bot.take() {
             AtomicResponse::new(Box::pin(async move {
-                let res = user.trigger_hook(state).await;
-                (user, res)
+                let res = bot.trigger_hook(state).await;
+                (bot, res)
             }
                 .into_actor(self)
                 .map(|(u, res), a, _c| {
-                    a.user = Some(u);
+                    a.bot = Some(u);
                     res.map_err(|e| ActionExecutionError::RuneError(e.to_string()))
                 })
             ))
         } else {
-            log::warn!("User is occupied");
-            AtomicResponse::new(Box::pin(futures::future::err(ActionExecutionError::OccupiedUser).into_actor(self)))
+            log::warn!("Bot is occupied");
+            AtomicResponse::new(Box::pin(futures::future::err(ActionExecutionError::OccupiedBot).into_actor(self)))
         }
     }
 }
@@ -165,24 +165,24 @@ pub struct ExecuteHandler {
     pub args: OwnedValue,
 }
 
-impl Handler<ExecuteHandler> for UserActor {
+impl Handler<ExecuteHandler> for BotActor {
     type Result = AtomicResponse<Self, Result<OwnedValue, ActionExecutionError>>;
 
     fn handle(&mut self, msg: ExecuteHandler, _ctx: &mut Self::Context) -> Self::Result {
-        if let Some(mut user) = self.user.take() {
+        if let Some(mut bot) = self.bot.take() {
             AtomicResponse::new(Box::pin(async move {
-                let out = user.execute_handler(msg.id, msg.args).await;
-                (user, out)
+                let out = bot.execute_handler(msg.id, msg.args).await;
+                (bot, out)
             }
                 .into_actor(self)
                 .map(|(u, out), a, _c| {
-                    a.user = Some(u);
+                    a.bot = Some(u);
                     out.map_err(|e| ActionExecutionError::RuneError(e.to_string()))
                 })
             ))
         } else {
-            log::warn!("User is occupied");
-            AtomicResponse::new(Box::pin(futures::future::err(ActionExecutionError::OccupiedUser).into_actor(self)))
+            log::warn!("Bot is occupied");
+            AtomicResponse::new(Box::pin(futures::future::err(ActionExecutionError::OccupiedBot).into_actor(self)))
         }
     }
 }

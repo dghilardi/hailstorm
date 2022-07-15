@@ -1,4 +1,4 @@
-mod user_storage;
+mod bot_storage;
 mod registry;
 mod module;
 pub mod initializer;

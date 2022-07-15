@@ -157,7 +157,7 @@ impl ControllerActor {
                 Command::Stop(StopCommand { reset: true }),
                 Command::UpdateAgentsCount(agents_count as u32),
                 Command::Load(LoadSimCommand {
-                    clients_evolution: simulation.users.iter()
+                    clients_evolution: simulation.bots.iter()
                         .cloned().map(Into::into)
                         .collect(),
                     script: simulation.script.clone(),
@@ -167,7 +167,7 @@ impl ControllerActor {
                 Command::Stop(StopCommand { reset: true }),
                 Command::UpdateAgentsCount(agents_count as u32),
                 Command::Load(LoadSimCommand {
-                    clients_evolution: simulation.users.iter()
+                    clients_evolution: simulation.bots.iter()
                         .cloned().map(Into::into)
                         .collect(),
                     script: simulation.script.clone(),

@@ -1,19 +1,19 @@
 use std::time::Duration;
 use rune::{FromValue, Hash};
 use rune::runtime::{UnsafeToValue, VmError};
-use crate::simulation::rune::extension::user::UserBehaviour;
+use crate::simulation::rune::extension::bot::BotBehaviour;
 use crate::simulation::rune::types::value::OwnedValue;
-use crate::simulation::user_actor::UserState;
+use crate::simulation::actor::bot::BotState;
 
-pub struct ScriptedUser {
-    behaviour: UserBehaviour,
+pub struct ScriptedBot {
+    behaviour: BotBehaviour,
     instance: rune::Value,
     vm: rune::Vm,
 }
 
-impl ScriptedUser {
+impl ScriptedBot {
     pub(crate) fn new(
-        behaviour: UserBehaviour,
+        behaviour: BotBehaviour,
         instance: rune::Value,
         vm: rune::Vm,
     ) -> Self {
@@ -43,7 +43,7 @@ impl ScriptedUser {
             .map_err(|e| VmError::panic(e.to_string()))
     }
 
-    pub async fn trigger_hook(&mut self, state: UserState) -> Result<(), VmError> {
+    pub async fn trigger_hook(&mut self, state: BotState) -> Result<(), VmError> {
         let maybe_hook = self.behaviour.hook_action(state);
         if let Some(hook) = maybe_hook {
             self.vm.async_call(hook, (&self.instance, ))

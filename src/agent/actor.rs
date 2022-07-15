@@ -18,13 +18,13 @@ use crate::MultiAgentUpdateMessage;
 use crate::communication::protobuf::grpc;
 use crate::communication::protobuf::grpc::command_item::Command;
 use crate::communication::protobuf::grpc::{ModelStateSnapshot, ModelStats, StopCommand};
-use crate::simulation::simulation_actor::{ClientStats, FetchSimulationStats, SimulationActor, SimulationCommand, SimulationCommandLst, SimulationState, SimulationStats};
-use crate::simulation::user_actor::UserState;
+use crate::simulation::actor::simulation::{ClientStats, FetchSimulationStats, SimulationActor, SimulationCommand, SimulationCommandLst, SimulationState, SimulationStats};
+use crate::simulation::actor::bot::BotState;
 
-struct AggregatedUserStateMetric {
+struct AggregatedBotStateMetric {
     timestamp: SystemTime,
     model: String,
-    state: UserState,
+    state: BotState,
     count: usize,
 }
 
@@ -34,7 +34,7 @@ pub struct AgentCoreActor {
     server_addr: Addr<GrpcServerActor>,
     simulation_addr: Addr<SimulationActor>,
     metrics_addr: Addr<MetricsManagerActor>,
-    last_sent_metrics: Vec<AggregatedUserStateMetric>,
+    last_sent_metrics: Vec<AggregatedBotStateMetric>,
 }
 
 impl AgentCoreActor {
@@ -142,7 +142,7 @@ impl AgentCoreActor {
                                 false
                             }
                         } else {
-                            self.last_sent_metrics.push(AggregatedUserStateMetric {
+                            self.last_sent_metrics.push(AggregatedBotStateMetric {
                                 timestamp,
                                 model: client.model.clone(),
                                 state: *state,

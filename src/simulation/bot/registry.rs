@@ -6,16 +6,16 @@ use rune::compile::{Component, Item};
 use rune::runtime::debug::DebugArgs;
 use rune::runtime::RuntimeContext;
 use crate::agent::metrics::manager_actor::{StartActionTimer, StopActionTimer};
-use crate::simulation::rune::extension::{metrics, user};
-use crate::simulation::rune::extension::user::UserBehaviour;
-use crate::simulation::user::error::{LoadScriptError, UserError};
-use crate::simulation::user::model_factory::UserModelFactory;
-use crate::simulation::user::params::UserParams;
-use crate::simulation::user::scripted_user::ScriptedUser;
+use crate::simulation::rune::extension::{metrics, bot};
+use crate::simulation::rune::extension::bot::BotBehaviour;
+use crate::simulation::bot::error::{LoadScriptError, BotError};
+use crate::simulation::bot::model_factory::BotModelFactory;
+use crate::simulation::bot::params::BotParams;
+use crate::simulation::bot::scripted::ScriptedBot;
 
 #[derive(Debug)]
-pub struct UserRegistry {
-    user_types: HashMap<String, UserBehaviour>,
+pub struct BotRegistry {
+    bot_types: HashMap<String, BotBehaviour>,
     context: Context,
     runtime: Arc<RuntimeContext>,
     unit: Arc<Unit>,
@@ -28,21 +28,21 @@ pub struct FunSignature {
     args: DebugArgs,
 }
 
-impl UserRegistry {
+impl BotRegistry {
     pub fn new<A>(
         mut context: Context,
         metrics_mgr_addr: Addr<A>,
-    ) -> Result<Self, UserError>
+    ) -> Result<Self, BotError>
         where A: Actor<Context=actix::Context<A>>
         + Handler<StartActionTimer>
         + Handler<StopActionTimer>
     {
-        context.install(&user::module()?)?;
+        context.install(&bot::module()?)?;
         context.install(&metrics::module(metrics_mgr_addr)?)?;
         let runtime = Arc::new(context.runtime());
 
         Ok(Self {
-            user_types: Default::default(),
+            bot_types: Default::default(),
             context,
             runtime,
             unit: Arc::new(Default::default()),
@@ -64,7 +64,7 @@ impl UserRegistry {
 
         let mut vm = Vm::new(self.runtime.clone(), unit.clone());
 
-        let user_types = unit.debug_info()
+        let bot_types = unit.debug_info()
             .ok_or(LoadScriptError::NoDebugInfo)?
             .functions
             .iter()
@@ -87,14 +87,14 @@ impl UserRegistry {
             }).into_iter()
             .filter(|(_k, v)|
                 v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("new".into()))) &&
-                    v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("register_user".into())))
+                    v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("register_bot".into())))
             )
             .flat_map(|(k, _sig)| {
-                let mut user = UserBehaviour::default();
-                let register_out = vm.call(&[k.clone(), String::from("register_user")], (&mut user, ));
+                let mut bot = BotBehaviour::default();
+                let register_out = vm.call(&[k.clone(), String::from("register_bot")], (&mut bot, ));
 
                 match register_out {
-                    Ok(_) => Some((k, user)),
+                    Ok(_) => Some((k, bot)),
                     Err(err) => {
                         log::error!("Error: {err}");
                         None
@@ -104,29 +104,29 @@ impl UserRegistry {
             .collect::<HashMap<_, _>>();
 
         self.unit = unit;
-        self.user_types = user_types;
+        self.bot_types = bot_types;
 
         Ok(())
     }
 
     pub fn reset_script(&mut self) {
-        self.user_types = Default::default();
+        self.bot_types = Default::default();
         self.unit = Arc::new(Default::default());
     }
 
     pub fn has_registered_models(&self) -> bool {
-        !self.user_types.is_empty()
+        !self.bot_types.is_empty()
     }
 
-    pub fn build_user(&self, user_id: u64, model: &str) -> Option<ScriptedUser> {
-        self.user_types
+    pub fn build_bot(&self, bot_id: u64, model: &str) -> Option<ScriptedBot> {
+        self.bot_types
             .get(model)
             .and_then(|b| {
                 let mut vm = rune::Vm::new(self.runtime.clone(), self.unit.clone());
-                let params = UserParams { user_id };
-                let user_creation_result = vm.call([model, "new"], (params, ));
-                match user_creation_result {
-                    Ok(instance) => Some(ScriptedUser::new(b.clone(), instance, vm)),
+                let params = BotParams { bot_id };
+                let bot_creation_result = vm.call([model, "new"], (params, ));
+                match bot_creation_result {
+                    Ok(instance) => Some(ScriptedBot::new(b.clone(), instance, vm)),
                     Err(e) => {
                         log::error!("Error during '{model}' instantiation - {e}");
                         None
@@ -135,17 +135,17 @@ impl UserRegistry {
             })
     }
 
-    pub fn count_user_models(&self) -> usize {
-        self.user_types.len()
+    pub fn count_bot_models(&self) -> usize {
+        self.bot_types.len()
     }
 
     pub fn model_names(&self) -> Vec<&String> {
-        self.user_types.keys().collect()
+        self.bot_types.keys().collect()
     }
 
-    pub fn build_factory(&self, model: &str) -> Option<UserModelFactory> {
-        self.user_types.get(model).map(|b|
-            UserModelFactory {
+    pub fn build_factory(&self, model: &str) -> Option<BotModelFactory> {
+        self.bot_types.get(model).map(|b|
+            BotModelFactory {
                 model: model.to_string(),
                 behaviour: b.clone(),
                 runtime: self.runtime.clone(),
@@ -163,15 +163,15 @@ mod test {
     #[actix::test]
     async fn test_new_registry_creation() {
         let metrics_addr = MetricsManagerActor::start_default();
-        let mut registry = UserRegistry::new(Context::with_default_modules().unwrap(), metrics_addr).unwrap();
+        let mut registry = BotRegistry::new(Context::with_default_modules().unwrap(), metrics_addr).unwrap();
         registry.load_script(r###"
-        use hailstorm::user::ActionTrigger;
+        use hailstorm::bot::ActionTrigger;
 
         struct Demo { id }
         impl Demo {
-            pub fn register_user(user) {
-                user.register_action(ActionTrigger::alive(10.0), Self::do_something);
-                user.register_action(ActionTrigger::alive(10.0), Self::do_something_else);
+            pub fn register_bot(bot) {
+                bot.register_action(ActionTrigger::alive(10.0), Self::do_something);
+                bot.register_action(ActionTrigger::alive(10.0), Self::do_something_else);
           }
           pub fn new() {
             Self { id: 10 }
@@ -185,12 +185,12 @@ mod test {
         }
         "###).expect("Error building registry");
 
-        assert!(registry.user_types.contains_key("Demo"));
+        assert!(registry.bot_types.contains_key("Demo"));
 
-        let user = registry.user_types.get("Demo").unwrap();
+        let bot = registry.bot_types.get("Demo").unwrap();
 
         let mut vm = Vm::new(registry.runtime, registry.unit);
         let instance = vm.call(&["Demo", "new"], ()).unwrap();
-        vm.call(user.random_action(), (&instance, )).expect("Error running action");
+        vm.call(bot.random_action(), (&instance, )).expect("Error running action");
     }
 }

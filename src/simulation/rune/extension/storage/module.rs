@@ -1,7 +1,7 @@
 use rune::{ContextError, Module};
 use crate::simulation::rune::extension::storage::initializer::StorageInitializerRegistry;
 use crate::simulation::rune::extension::storage::registry::StorageRegistry;
-use super::user_storage::UserStorage;
+use super::bot_storage::BotStorage;
 
 pub struct StorageModuleArgs<Initializer> {
     pub initializer: Initializer,
@@ -14,11 +14,11 @@ where
     let mut module = Module::with_crate_item("hailstorm", &["storage"]);
 
     let registry = StorageRegistry::new(args.initializer);
-    module.function(&["get_user_storage"], move |name, user_id| registry.get_user_storage(name, user_id))?;
+    module.function(&["get_bot_storage"], move |name, bot_id| registry.get_bot_storage(name, bot_id))?;
 
-    module.ty::<UserStorage>()?;
-    module.inst_fn("read", UserStorage::read)?;
-    module.inst_fn("write", UserStorage::write)?;
+    module.ty::<BotStorage>()?;
+    module.inst_fn("read", BotStorage::read)?;
+    module.inst_fn("write", BotStorage::write)?;
 
     Ok(module)
 }

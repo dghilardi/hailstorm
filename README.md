@@ -32,8 +32,8 @@ impl hailstone {
         Self { id: 10 }
     }
 
-    pub fn register_user(user) {
-        user.register_action(10.0, Self::do_http_req)
+    pub fn register_bot(bot) {
+        bot.register_action(10.0, Self::do_http_req)
     }
 
     pub async fn do_http_req(self) {

@@ -5,7 +5,7 @@ use crate::utils::varint::{VarintDecode, VarintEncode};
 pub struct CompoundId<AgentId> {
     agent_id: AgentId,
     model_id: u32,
-    user_id: u32,
+    bot_id: u32,
 }
 
 #[derive(Error, Debug)]
@@ -18,12 +18,12 @@ impl <AgentId> CompoundId<AgentId> {
     pub fn new(
         agent_id: AgentId,
         model_id: u32,
-        user_id: u32,
+        bot_id: u32,
     ) -> Self {
         Self {
             agent_id,
             model_id,
-            user_id,
+            bot_id,
         }
     }
     pub fn from_internal_id(agent_id: AgentId, internal_id: u64) -> Result<Self, CompoundIdParseError> {
@@ -35,25 +35,25 @@ impl <AgentId> CompoundId<AgentId> {
         Ok(Self {
             agent_id,
             model_id: sub_ids[0],
-            user_id: sub_ids[1],
+            bot_id: sub_ids[1],
         })
     }
 
     pub fn internal_id(&self) -> u64 {
-        let mut varint = vec![self.model_id, self.user_id].to_varint();
+        let mut varint = vec![self.model_id, self.bot_id].to_varint();
         varint.splice(0..0, vec![0; 8 - varint.len()]);
         u64::from_be_bytes(varint.try_into().expect("Error collecting bytes"))
     }
 
-    pub fn user_id(&self) -> u32 {
-        self.user_id
+    pub fn bot_id(&self) -> u32 {
+        self.bot_id
     }
 
     pub fn with_agent_id<NewAgentId>(self, agent_id: NewAgentId) -> CompoundId<NewAgentId> {
         CompoundId {
             agent_id,
             model_id: self.model_id,
-            user_id: self.user_id,
+            bot_id: self.bot_id,
         }
     }
 }
@@ -68,7 +68,7 @@ impl CompoundId<u32> {
         vec![
             self.agent_id,
             self.model_id,
-            self.user_id,
+            self.bot_id,
         ].to_varint()
     }
 }

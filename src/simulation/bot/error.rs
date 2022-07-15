@@ -1,14 +1,14 @@
 use rune::ContextError;
 
 #[derive(Debug, thiserror::Error)]
-pub enum UserError {
+pub enum BotError {
     #[error("Rune initialization error")]
     RuneInitError(String),
     #[error("Build Error - {0}")]
     BuildError(String),
 }
 
-impl From<ContextError> for UserError {
+impl From<ContextError> for BotError {
     fn from(ce: ContextError) -> Self {
         Self::RuneInitError(ce.to_string())
     }

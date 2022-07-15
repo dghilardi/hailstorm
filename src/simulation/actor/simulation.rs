@@ -5,17 +5,17 @@ use actix::{Actor, AsyncContext, Context, Handler, Message, MessageResponse, Res
 use futures::FutureExt;
 use crate::simulation::error::SimulationError;
 use crate::simulation::rune::types::value::OwnedValue;
-use crate::simulation::simulation_user_model::SimulationUserModel;
-use crate::simulation::user::registry::UserRegistry;
-use crate::simulation::user_actor::{ActionExecutionError, ExecuteHandler, UserState};
+use crate::simulation::bot_model::BotModel;
+use crate::simulation::bot::registry::BotRegistry;
+use crate::simulation::actor::bot::{ActionExecutionError, ExecuteHandler, BotState};
 
 pub struct SimulationActor {
     agent_id: u64,
     start_ts: Option<SystemTime>,
-    user_registry: UserRegistry,
+    bot_registry: BotRegistry,
     agents_count: u32,
     model_shapes: HashMap<String, Box<dyn Fn(f64) -> f64>>,
-    sim_users: HashMap<String, SimulationUserModel>,
+    bots: HashMap<String, BotModel>,
 }
 
 impl Actor for SimulationActor {
@@ -27,14 +27,14 @@ impl Actor for SimulationActor {
 }
 
 impl SimulationActor {
-    pub fn new(agent_id: u64, user_registry: UserRegistry) -> Self {
+    pub fn new(agent_id: u64, bot_registry: BotRegistry) -> Self {
         Self {
             agent_id,
             start_ts: None,
-            user_registry,
+            bot_registry,
             agents_count: 1,
             model_shapes: Default::default(),
-            sim_users: Default::default(),
+            bots: Default::default(),
         }
     }
 
@@ -68,27 +68,27 @@ impl SimulationActor {
             ;
 
         if let Some(elapsed) = maybe_elapsed {
-            for (model, shape) in self.model_shapes.iter() {
+            for (model_name, shape) in self.model_shapes.iter() {
                 let shape_val = shape(elapsed);
                 let count = Self::normalize_count(shape_val, self.agent_id, self.agents_count as u64);
 
-                let model_users = if let Some(mu) = self.sim_users.get_mut(model) {
+                let model = if let Some(mu) = self.bots.get_mut(model_name) {
                     mu
                 } else {
-                    log::warn!("No simulation-user-model defined for model {model}");
+                    log::warn!("No bot-model defined with name {model_name}");
                     break;
                 };
 
-                let running_count = model_users.count_active();
+                let running_count = model.count_active();
 
-                model_users.retain(|_id, u| u.is_connected());
+                model.retain(|_id, bot| bot.is_connected());
 
                 match count.cmp(&running_count) {
                     Ordering::Less => {
-                        model_users.users_mut()
-                            .filter(|u| u.state() != UserState::Stopping)
+                        model.bots_mut()
+                            .filter(|bot| bot.state() != BotState::Stopping)
                             .take(running_count - count)
-                            .for_each(|u| u.stop_user());
+                            .for_each(|bot| bot.stop_bot());
                     }
                     Ordering::Equal => {
                         // running number is as expected
@@ -96,45 +96,45 @@ impl SimulationActor {
                     Ordering::Greater => {
                         let spawn_count = count - running_count;
                         for _idx in 0..spawn_count {
-                            model_users.spawn_user(ctx.address());
+                            model.spawn_bot(ctx.address());
                         }
                     }
                 }
             }
         } else {
-            self.sim_users.iter_mut()
-                .flat_map(|(_m, u)| u.users_mut())
-                .filter(|u| u.state() != UserState::Stopping)
-                .for_each(|u| u.stop_user());
+            self.bots.iter_mut()
+                .flat_map(|(_m, model)| model.bots_mut())
+                .filter(|bot| bot.state() != BotState::Stopping)
+                .for_each(|bot| bot.stop_bot());
         }
     }
 }
 
 #[derive(Message, Debug)]
 #[rtype(result = "()")]
-pub struct UserStateChange {
-    pub user_id: u64,
-    pub state: UserState,
+pub struct BotStateChange {
+    pub bot_id: u64,
+    pub state: BotState,
 }
 
-impl Handler<UserStateChange> for SimulationActor {
+impl Handler<BotStateChange> for SimulationActor {
     type Result = ();
 
-    fn handle(&mut self, msg: UserStateChange, ctx: &mut Self::Context) -> Self::Result {
-        let model_entry = self.sim_users.iter_mut()
-            .find(|(_m, u)| u.contains_id(msg.user_id));
+    fn handle(&mut self, msg: BotStateChange, ctx: &mut Self::Context) -> Self::Result {
+        let model_entry = self.bots.iter_mut()
+            .find(|(_m, model)| model.contains_id(msg.bot_id));
 
-        if matches!(msg.state, UserState::Stopped) {
-            if let Some((_m, u)) = model_entry {
-                u.remove_user(msg.user_id);
+        if matches!(msg.state, BotState::Stopped) {
+            if let Some((_m, model)) = model_entry {
+                model.remove_bot(msg.bot_id);
             }
         } else {
-            let maybe_simulation_user = model_entry
-                .and_then(|(_m, u)| u.get_user_mut(msg.user_id));
+            let maybe_bot = model_entry
+                .and_then(|(_m, bot)| bot.get_bot_mut(msg.bot_id));
 
-            if let Some(u) = maybe_simulation_user {
-                u.state = msg.state;
-                let hook_fut = u.trigger_hook(msg.state)
+            if let Some(bot) = maybe_bot {
+                bot.state = msg.state;
+                let hook_fut = bot.trigger_hook(msg.state)
                     .map(|res| match res {
                         Ok(Ok(())) => {}
                         Ok(Err(err)) => log::error!("Error during hook execution - {err}"),
@@ -184,20 +184,20 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                         log::error!("Error registering simulation clients - {err}")
                     }
 
-                    let load_script_out = self.user_registry.load_script(&script);
+                    let load_script_out = self.bot_registry.load_script(&script);
                     if let Err(err) = load_script_out {
                         log::error!("Error loading script - {err}");
                     }
 
-                    self.sim_users.drain();
-                    self.user_registry
+                    self.bots.drain();
+                    self.bot_registry
                         .model_names()
                         .into_iter()
                         .enumerate()
                         .for_each(|(idx, model)| {
-                            self.sim_users.insert(model.to_string(), SimulationUserModel::new(
+                            self.bots.insert(model.to_string(), BotModel::new(
                                 idx as u32,
-                                self.user_registry.build_factory(model)
+                                self.bot_registry.build_factory(model)
                                     .unwrap_or_else(|| panic!("No factory for {model}")),
                             ));
                         });
@@ -216,7 +216,7 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                 SimulationCommand::StopSimulation { reset } => {
                     self.start_ts = None;
                     if reset {
-                        self.user_registry.reset_script();
+                        self.bot_registry.reset_script();
                         self.model_shapes.clear();
                     }
                 }
@@ -236,7 +236,7 @@ pub enum SimulationState {
 pub struct ClientStats {
     pub model: String,
     pub timestamp: SystemTime,
-    pub count_by_state: HashMap<UserState, usize>,
+    pub count_by_state: HashMap<BotState, usize>,
 }
 
 #[derive(MessageResponse)]
@@ -255,14 +255,14 @@ impl Handler<FetchSimulationStats> for SimulationActor {
     type Result = SimulationStats;
 
     fn handle(&mut self, _msg: FetchSimulationStats, _ctx: &mut Self::Context) -> Self::Result {
-        let state = match (self.start_ts.as_ref(), self.user_registry.has_registered_models()) {
+        let state = match (self.start_ts.as_ref(), self.bot_registry.has_registered_models()) {
             (_, false) => SimulationState::Idle,
             (None, true) => SimulationState::Ready,
             (Some(ts), true) if *ts < SystemTime::now() => SimulationState::Running,
             (Some(_), true) => SimulationState::Waiting,
         };
 
-        let stats = self.sim_users.iter()
+        let stats = self.bots.iter()
             .map(|(model, usr)| ClientStats {
                 timestamp: SystemTime::now(),
                 model: model.clone(),
@@ -282,7 +282,7 @@ impl Handler<FetchSimulationStats> for SimulationActor {
 #[derive(Message)]
 #[rtype(result = "Result<OwnedValue, ActionExecutionError>")]
 pub struct InvokeHandler {
-    pub user_id: u64,
+    pub bot_id: u64,
     pub execution_args: ExecuteHandler,
 }
 
@@ -290,18 +290,18 @@ impl Handler<InvokeHandler> for SimulationActor {
     type Result = ResponseFuture<Result<OwnedValue, ActionExecutionError>>;
 
     fn handle(&mut self, msg: InvokeHandler, _ctx: &mut Self::Context) -> Self::Result {
-        let user_id = msg.user_id;
-        let maybe_execution_fut = self.sim_users.iter_mut()
-            .filter_map(|(_m, u)| u.get_user_mut(user_id))
+        let bot_id = msg.bot_id;
+        let maybe_execution_fut = self.bots.iter_mut()
+            .filter_map(|(_m, model)| model.get_bot_mut(bot_id))
             .next()
-            .map(|user| user.execute_handler(msg.execution_args.id, msg.execution_args.args));
+            .map(|bot| bot.execute_handler(msg.execution_args.id, msg.execution_args.args));
 
         Box::pin(async move {
             if let Some(execution_fut) = maybe_execution_fut {
                 execution_fut.await
                     .map_err(|e| ActionExecutionError::Internal(format!("Mailbox error - {e}")))?
             } else {
-                Err(ActionExecutionError::Internal(format!("No user with id {user_id}")))
+                Err(ActionExecutionError::Internal(format!("No bot with id {bot_id}")))
             }
         })
     }
@@ -309,7 +309,7 @@ impl Handler<InvokeHandler> for SimulationActor {
 
 #[cfg(test)]
 mod test {
-    use crate::simulation::simulation_actor::SimulationActor;
+    use crate::simulation::actor::simulation::SimulationActor;
 
     #[test]
     fn test_shape_normalization() {

@@ -1,23 +1,23 @@
 use std::sync::Arc;
 use rune::runtime::RuntimeContext;
 use rune::Unit;
-use crate::simulation::rune::extension::user::UserBehaviour;
-use crate::simulation::user::params::UserParams;
-use crate::simulation::user::scripted_user::ScriptedUser;
+use crate::simulation::rune::extension::bot::BotBehaviour;
+use crate::simulation::bot::params::BotParams;
+use crate::simulation::bot::scripted::ScriptedBot;
 
-pub struct UserModelFactory {
+pub struct BotModelFactory {
     pub model: String,
-    pub behaviour: UserBehaviour,
+    pub behaviour: BotBehaviour,
     pub runtime: Arc<RuntimeContext>,
     pub unit: Arc<Unit>,
 }
 
-impl UserModelFactory {
-    pub fn new_user(&self, user_id: u64) -> ScriptedUser {
+impl BotModelFactory {
+    pub fn new_bot(&self, bot_id: u64) -> ScriptedBot {
         let mut vm = rune::Vm::new(self.runtime.clone(), self.unit.clone());
-        let params = UserParams { user_id };
+        let params = BotParams { bot_id };
         let instance = vm.call([&self.model, "new"], (params,)).expect("Error construction");
-        ScriptedUser::new(
+        ScriptedBot::new(
             self.behaviour.clone(),
             instance,
             vm,

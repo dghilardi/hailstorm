@@ -1,7 +1,7 @@
 use crate::agent::metrics::manager_actor::ActionMetricsFamilySnapshot;
 use crate::communication::protobuf::grpc::{ModelStateSnapshot, ClientGroupStates};
 use crate::grpc::{PerformanceHistogram, PerformanceSnapshot};
-use crate::simulation::simulation_actor::ClientStats;
+use crate::simulation::actor::simulation::ClientStats;
 
 impl From<ClientStats> for ModelStateSnapshot {
     fn from(cs: ClientStats) -> Self {

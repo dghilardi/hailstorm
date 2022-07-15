@@ -3,12 +3,12 @@ use rune::Any;
 use crate::simulation::rune::extension::storage::registry::StorageSlice;
 
 #[derive(Any)]
-pub struct UserStorage {
+pub struct BotStorage {
     init: HashMap<String, String>,
     storage: StorageSlice,
 }
 
-impl UserStorage {
+impl BotStorage {
     pub fn new(
         init: HashMap<String, String>,
         storage: StorageSlice,

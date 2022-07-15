@@ -60,14 +60,14 @@ impl CsvStorageInitializer {
 }
 
 impl StorageInitializerRegistry for CsvStorageInitializer {
-    fn initial_values_for(&self, name: &str, user_id: u32) -> HashMap<String, String> {
+    fn initial_values_for(&self, name: &str, bot_id: u32) -> HashMap<String, String> {
         self.slices
             .lock()
             .expect("Error locking storage")
             .borrow_mut()
             .entry(name.to_string())
             .or_insert_with(|| self.load_slice(name))
-            .values.get(&user_id).cloned()
+            .values.get(&bot_id).cloned()
             .unwrap_or_default()
     }
 }

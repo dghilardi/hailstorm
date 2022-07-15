@@ -1,6 +1,6 @@
 mod behaviour;
 mod module;
-mod user_state;
+mod state;
 
-pub use behaviour::UserBehaviour;
+pub use behaviour::BotBehaviour;
 pub use module::module;

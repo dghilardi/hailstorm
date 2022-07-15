@@ -10,8 +10,8 @@ use crate::communication::protobuf::grpc;
 use crate::communication::notifier_actor::UpdatesNotifierActor;
 use crate::communication::server::HailstormGrpcServer;
 use crate::communication::server_actor::GrpcServerActor;
-use crate::simulation::simulation_actor::SimulationActor;
-use crate::simulation::user::registry::UserRegistry;
+use crate::simulation::actor::simulation::SimulationActor;
+use crate::simulation::bot::registry::BotRegistry;
 
 pub struct AgentBuilder <ContextBuilder> {
     pub agent_id: u64,
@@ -30,11 +30,11 @@ where
         let simulation_ctx: Context<SimulationActor> = Context::new();
 
         let rune_context = (self.rune_context_builder)(simulation_ctx.address());
-        let user_registry = UserRegistry::new(rune_context, metrics_addr.clone()).expect("Error during registry construction");
+        let bot_registry = BotRegistry::new(rune_context, metrics_addr.clone()).expect("Error during registry construction");
 
         let updater_addr = UpdatesNotifierActor::create(|_| UpdatesNotifierActor::new());
         let server_actor = GrpcServerActor::create(|_| GrpcServerActor::new(updater_addr.clone().recipient()));
-        let simulation_actor = simulation_ctx.run(SimulationActor::new(self.agent_id, user_registry));
+        let simulation_actor = simulation_ctx.run(SimulationActor::new(self.agent_id, bot_registry));
         let core_addr = AgentCoreActor::create(|_| AgentCoreActor::new(
             self.agent_id,
             updater_addr.clone(),

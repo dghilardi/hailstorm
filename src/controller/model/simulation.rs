@@ -4,13 +4,13 @@ use crate::communication::protobuf::grpc;
 use crate::communication::protobuf::grpc::{AgentSimulationState, ClientDistribution, LoadSimCommand};
 
 #[derive(Clone)]
-pub struct UserDef {
+pub struct BotDef {
     pub model: String,
     pub shape: String,
 }
 
-impl From<UserDef> for ClientDistribution {
-    fn from(ud: UserDef) -> Self {
+impl From<BotDef> for ClientDistribution {
+    fn from(ud: BotDef) -> Self {
         Self {
             model: ud.model,
             shape: ud.shape,
@@ -20,15 +20,15 @@ impl From<UserDef> for ClientDistribution {
 
 #[derive(Clone)]
 pub struct SimulationDef {
-    pub users: Vec<UserDef>,
+    pub bots: Vec<BotDef>,
     pub script: String,
 }
 
 impl From<SimulationDef> for LoadSimCommand {
     fn from(def: SimulationDef) -> Self {
         Self {
-            clients_evolution: def.users.into_iter()
-                .map(|UserDef { model, shape }| ClientDistribution { model, shape })
+            clients_evolution: def.bots.into_iter()
+                .map(|BotDef { model, shape }| ClientDistribution { model, shape })
                 .collect(),
             script: def.script,
         }

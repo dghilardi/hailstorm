@@ -1,7 +1,7 @@
 use rune::Any;
 
 #[derive(Any)]
-pub struct UserParams {
+pub struct BotParams {
     #[rune(get)]
-    pub user_id: u64,
+    pub bot_id: u64,
 }

@@ -3,29 +3,29 @@ use std::time::Duration;
 use rand::{Rng, thread_rng};
 use rune::{Any, Hash};
 use rune::runtime::{Function, Shared};
-use crate::simulation::user_actor::UserState;
+use crate::simulation::actor::bot::BotState;
 
 #[derive(Clone, Debug, Any)]
-pub struct UserBehaviour {
+pub struct BotBehaviour {
     total_weight: f64,
     interval: Duration,
-    actions: Vec<UserAction>,
-    hooks: HashMap<UserState, Hash>,
+    actions: Vec<BotAction>,
+    hooks: HashMap<BotState, Hash>,
 }
 
 #[derive(Clone, Debug, Any)]
 pub enum ActionTrigger {
     Alive { weight: f32 },
-    EnterState { state: UserState },
+    EnterState { state: BotState },
 }
 
 #[derive(Clone, Debug)]
-struct UserAction {
+struct BotAction {
     weight: f32,
     hash: Hash,
 }
 
-impl Default for UserBehaviour {
+impl Default for BotBehaviour {
     fn default() -> Self {
         Self {
             total_weight: 0.0,
@@ -36,14 +36,14 @@ impl Default for UserBehaviour {
     }
 }
 
-impl UserBehaviour {
+impl BotBehaviour {
     pub fn register_action(&mut self, trigger: ActionTrigger, action: Shared<Function>) {
         let hash = action.take().expect("Error extracting action hash").type_hash();
         match trigger {
             ActionTrigger::Alive { weight } => {
                 let weight = weight.max(0f32);
                 self.total_weight += weight as f64;
-                self.actions.push(UserAction { hash, weight });
+                self.actions.push(BotAction { hash, weight });
             },
             ActionTrigger::EnterState { state } => {
                 let overridden_action = self.hooks.insert(state, hash);
@@ -69,7 +69,7 @@ impl UserBehaviour {
         return self.actions.last().expect("No actions found").hash;
     }
 
-    pub fn hook_action(&self, state: UserState) -> Option<Hash> {
+    pub fn hook_action(&self, state: BotState) -> Option<Hash> {
         self.hooks
             .get(&state)
             .cloned()
