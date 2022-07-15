@@ -53,6 +53,11 @@ impl SimulationActor {
         Ok(())
     }
 
+    fn normalize_count(global_count: f64, agent_id: u64, agents_count: u64) -> usize {
+        let shift = (agent_id % agents_count) as f64 / agents_count as f64;
+        ((global_count / agents_count as f64) + shift).floor() as usize
+    }
+
     fn tick(&mut self, ctx: &mut Context<Self>) {
         let maybe_elapsed = self.start_ts
             .as_ref()
@@ -65,8 +70,7 @@ impl SimulationActor {
         if let Some(elapsed) = maybe_elapsed {
             for (model, shape) in self.model_shapes.iter() {
                 let shape_val = shape(elapsed);
-                let shift = (self.agent_id % 1000) as f64 / 1000f64;
-                let count = ((shape_val / self.agents_count as f64) + shift).floor() as usize;
+                let count = Self::normalize_count(shape_val, self.agent_id, self.agents_count as u64);
 
                 let model_users = if let Some(mu) = self.sim_users.get_mut(model) {
                     mu
@@ -300,5 +304,21 @@ impl Handler<InvokeHandler> for SimulationActor {
                 Err(ActionExecutionError::Internal(format!("No user with id {user_id}")))
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::simulation::simulation_actor::SimulationActor;
+
+    #[test]
+    fn test_shape_normalization() {
+        let agents_count = 13;
+        for n in 0..100 {
+            let sum: usize = (0..agents_count).into_iter()
+                .map(|agent_id| SimulationActor::normalize_count(n as f64, agent_id, agents_count))
+                .sum();
+            println!("{n} -> {sum}");
+        }
     }
 }
