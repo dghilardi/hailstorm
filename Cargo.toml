@@ -21,6 +21,7 @@ tokio = "1.18.2"
 tokio-stream = "0.1.8"
 
 actix = "0.13.0"
+pin-project-lite = "0.2"
 
 tonic = "0.7.2"
 prost = "0.10.3"

@@ -8,6 +8,7 @@ use crate::simulation::rune::types::value::OwnedValue;
 use crate::simulation::bot_model::BotModel;
 use crate::simulation::bot::registry::BotRegistry;
 use crate::simulation::actor::bot::{ActionExecutionError, ExecuteHandler, BotState};
+use crate::utils::actix::synchro_context::WeakContext;
 
 pub struct SimulationActor {
     agent_id: u32,
@@ -22,7 +23,7 @@ impl Actor for SimulationActor {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        ctx.run_interval(Duration::from_millis(1000), |act, ctx| act.tick(ctx));
+        ctx.run_interval_synchro(Duration::from_millis(1500), |act, ctx| act.tick(ctx));
     }
 }
 

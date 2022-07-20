@@ -20,6 +20,7 @@ use crate::communication::protobuf::grpc::command_item::Command;
 use crate::communication::protobuf::grpc::{ModelStateSnapshot, ModelStats, StopCommand};
 use crate::simulation::actor::simulation::{ClientStats, FetchSimulationStats, SimulationActor, SimulationCommand, SimulationCommandLst, SimulationState, SimulationStats};
 use crate::simulation::actor::bot::BotState;
+use crate::utils::actix::synchro_context::WeakContext;
 
 struct AggregatedBotStateMetric {
     timestamp: SystemTime,
@@ -162,7 +163,7 @@ impl Actor for AgentCoreActor {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        ctx.run_interval(Duration::from_secs(3), |actor, ctx| actor.send_data(ctx));
+        ctx.run_interval_synchro(Duration::from_secs(3), |actor, ctx| actor.send_data(ctx));
     }
 }
 
