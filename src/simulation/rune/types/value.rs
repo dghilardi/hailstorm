@@ -78,7 +78,7 @@ impl FromValue for OwnedValue {
             Value::StaticString(v) => Ok(Self::StaticString(v)),
             Value::String(v) => Ok(Self::String(v.take()?)),
             Value::Bytes(v) => Ok(Self::Bytes(v.take()?)),
-            Value::Vec(v) => Ok(Self::Vec(OwnedVec::from_iter(v.take()?.into_iter().map(|i| OwnedValue::from_value(i)).collect::<Result<Vec<_>, _>>()?))),
+            Value::Vec(v) => Ok(Self::Vec(OwnedVec::from_iter(v.take()?.into_iter().map(OwnedValue::from_value).collect::<Result<Vec<_>, _>>()?))),
             Value::Tuple(_) => Err(VmError::panic("Unexpected action return type 'Value::Tuple'")),
             Value::Object(v) => Ok(Self::Object(OwnedObject::from_iter(
                 v.take()?.into_iter()

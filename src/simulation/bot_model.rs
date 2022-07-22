@@ -10,7 +10,7 @@ use crate::simulation::bot::model_factory::BotModelFactory;
 use crate::simulation::actor::bot::{ExecuteHandler, StopBot, TriggerHook, BotActor, BotState};
 use crate::utils::varint::VarintDecode;
 pub struct SimulationBot {
-    pub state: BotState,
+    state: BotState,
     addr: Addr<BotActor>,
 }
 
@@ -24,16 +24,17 @@ impl SimulationBot {
         }
     }
 
-    pub fn trigger_hook(&mut self, state: BotState) -> Request<BotActor, TriggerHook> {
-        self.addr.send(TriggerHook { state })
-    }
-
     pub fn execute_handler(&self, id: Hash, args: OwnedValue) -> Request<BotActor, ExecuteHandler> {
         self.addr.send(ExecuteHandler { id, args })
     }
 
     pub fn state(&self) -> BotState {
         self.state
+    }
+
+    pub fn change_state(&mut self, state: BotState) -> Request<BotActor, TriggerHook> {
+        self.state = state;
+        self.addr.send(TriggerHook { state })
     }
 
     pub fn is_connected(&self) -> bool {

@@ -1,5 +1,5 @@
 use std::time::Duration;
-use actix::{Actor, ActorContext, Addr, AsyncContext, AtomicResponse, Context, Handler, Message, WrapFuture, ActorFutureExt, Recipient};
+use actix::{Actor, ActorContext, Addr, AsyncContext, AtomicResponse, Context, Handler, Message, WrapFuture, ActorFutureExt, Recipient, ResponseActFuture};
 use rand::{Rng, thread_rng};
 use rune::Hash;
 use thiserror::Error;
@@ -86,10 +86,21 @@ impl Actor for BotActor {
 pub struct StopBot;
 
 impl Handler<StopBot> for BotActor {
-    type Result = ();
+    type Result = ResponseActFuture<Self, ()>;
 
     fn handle(&mut self, _msg: StopBot, ctx: &mut Self::Context) -> Self::Result {
-        ctx.stop();
+        let act_fut = ctx.address()
+            .send(TriggerHook { state: BotState::Stopping })
+            .into_actor(self)
+            .map(|res, _act, ctx| {
+                match res {
+                    Ok(Ok(())) => {}
+                    Ok(Err(err)) => log::error!("Error executing stopping hook - {err}"),
+                    Err(err) => log::error!("Error triggering stopping hook - {err}"),
+                }
+                ctx.stop();
+            });
+        Box::pin(act_fut)
     }
 }
 

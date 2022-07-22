@@ -134,8 +134,7 @@ impl Handler<BotStateChange> for SimulationActor {
                 .and_then(|(_m, bot)| bot.get_bot_mut(msg.bot_id));
 
             if let Some(bot) = maybe_bot {
-                bot.state = msg.state;
-                let hook_fut = bot.trigger_hook(msg.state)
+                let hook_fut = bot.change_state(msg.state)
                     .map(|res| match res {
                         Ok(Ok(())) => {}
                         Ok(Err(err)) => log::error!("Error during hook execution - {err}"),
