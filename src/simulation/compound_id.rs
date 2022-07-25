@@ -60,8 +60,8 @@ impl <AgentId> CompoundId<AgentId> {
 
 impl CompoundId<u32> {
     pub fn global_id(&self) -> u64 {
-        let agent_part = (self.agent_id as u64) << 32;
-        agent_part | (self.internal_id() as u64)
+        let mut varint = vec![self.agent_id, self.model_id, self.bot_id].to_varint();
+        u64::from_be_bytes(varint.try_into().expect("Error collecting bytes"))
     }
 
     pub fn into_bytes(self) -> Vec<u8> {
