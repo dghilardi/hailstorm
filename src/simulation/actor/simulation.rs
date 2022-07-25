@@ -125,7 +125,8 @@ impl Handler<BotStateChange> for SimulationActor {
         let model_entry = self.bots.iter_mut()
             .find(|(_m, model)| model.contains_id(msg.bot_id));
 
-        if matches!(msg.state, BotState::Stopped) {
+        let entered_state = msg.state;
+        if matches!(entered_state, BotState::Stopped) {
             if let Some((_m, model)) = model_entry {
                 model.remove_bot(msg.bot_id);
             }
@@ -134,11 +135,11 @@ impl Handler<BotStateChange> for SimulationActor {
                 .and_then(|(_m, bot)| bot.get_bot_mut(msg.bot_id));
 
             if let Some(bot) = maybe_bot {
-                let hook_fut = bot.change_state(msg.state)
+                let hook_fut = bot.change_state(entered_state)
                     .map(|res| match res {
                         Ok(Ok(())) => {}
-                        Ok(Err(err)) => log::error!("Error during hook execution - {err}"),
-                        Err(mailbox_err) => log::error!("Mailbox error during hook execution - {mailbox_err}"),
+                        Ok(Err(err)) => log::error!("Error during hook {entered_state:?} execution - {err}"),
+                        Err(mailbox_err) => log::error!("Mailbox error during hook {entered_state:?} execution - {mailbox_err}"),
                     });
                 ctx.spawn(hook_fut.into_actor(self));
             }
