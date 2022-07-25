@@ -136,7 +136,7 @@ impl Handler<BotStateChange> for SimulationActor {
 
             if let Some(bot) = maybe_bot {
                 let hook_fut = bot.change_state(entered_state)
-                    .map(|res| match res {
+                    .map(move |res| match res {
                         Ok(Ok(())) => {}
                         Ok(Err(err)) => log::error!("Error during hook {entered_state:?} execution - {err}"),
                         Err(mailbox_err) => log::error!("Mailbox error during hook {entered_state:?} execution - {mailbox_err}"),
