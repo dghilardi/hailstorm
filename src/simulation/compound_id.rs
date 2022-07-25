@@ -61,6 +61,7 @@ impl <AgentId> CompoundId<AgentId> {
 impl CompoundId<u32> {
     pub fn global_id(&self) -> u64 {
         let mut varint = vec![self.agent_id, self.model_id, self.bot_id].to_varint();
+        varint.splice(0..0, vec![0; 8 - varint.len()]);
         u64::from_be_bytes(varint.try_into().expect("Error collecting bytes"))
     }
 
