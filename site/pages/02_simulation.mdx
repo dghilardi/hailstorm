@@ -1,0 +1,28 @@
+# Simulation
+
+Simulation are described by two sections: script and shape expression(s).
+
+## Script
+
+```rust
+struct Hailstone;
+
+impl Hailstone {
+  pub fn new(args) { Self }
+
+  pub fn register_bot(bot) {
+    bot.register_action(ActionTrigger::alive(100.0), Self::do_nothing);
+  }
+
+  pub async fn do_nothing(self) {
+    println("doing nothing ...")
+  }
+}
+```
+
+## Shape expression
+
+For each model defined in the script a shape expression can be defined.
+
+Expressions are evaluated by hailstorm once a second by valorizing t variable with the number of seconds passed from the start of the simulation.
+Instances of the model are then created or removed to match the count.

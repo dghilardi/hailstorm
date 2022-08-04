@@ -1,0 +1,15 @@
+{
+  "name": "hailstorm-docs",
+  "version": "1.0.0",
+  "description": "Hailstorm technical documentation site",
+  "main": "index.js",
+  "author": "Davide Ghilardi",
+  "license": "MIT",
+  "dependencies": {
+    "next": "^12.2.3",
+    "nextra": "^1.1.0",
+    "nextra-theme-docs": "^1.2.6",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}
