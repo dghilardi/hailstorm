@@ -39,15 +39,19 @@ impl SimulationActor {
         }
     }
 
-    pub fn register_model(&mut self, model: String, shape: String) -> Result<(), SimulationError> {
+    pub fn parse_shape_fun(fun: String) -> Result<impl Fn(f64) -> f64, meval::Error> {
         let mut ctx = meval::Context::new(); // built-ins
         ctx.func("rect", |x| if x.abs() > 0.5 { 0.0 } else if x.abs() == 0.5 { 0.5 } else { 1.0 })
             .func("tri", |x| if x.abs() < 1.0 { 1.0 - x.abs() } else { 0.0 })
             .func("step", |x| if x < 0.0 { 0.0 } else if x == 0.0 { 0.5 } else { 1.0 })
-            ;
+        ;
 
-        let expr: meval::Expr = shape.parse()?;
-        let shape_fun = expr.bind_with_context(ctx, "t")?;
+        let expr: meval::Expr = fun.parse()?;
+        expr.bind_with_context(ctx, "t")
+    }
+
+    pub fn register_model(&mut self, model: String, shape: String) -> Result<(), SimulationError> {
+        let shape_fun = Self::parse_shape_fun(shape)?;
 
         self.model_shapes.insert(model, Box::new(shape_fun));
 
