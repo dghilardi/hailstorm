@@ -32,24 +32,27 @@ struct AggregatedBotStateMetric {
 pub struct AgentCoreActor {
     agent_id: u32,
     notifier_addr: Addr<UpdatesNotifierActor>,
-    server_addr: Addr<GrpcServerActor>,
+    cmd_recipient: Recipient<ControllerCommandMessage>,
     simulation_addr: Addr<SimulationActor>,
     metrics_addr: Addr<MetricsManagerActor>,
     last_sent_metrics: Vec<AggregatedBotStateMetric>,
 }
 
 impl AgentCoreActor {
-    pub fn new(
+    pub fn new<ServerActor>(
         agent_id: u32,
         notifier_addr: Addr<UpdatesNotifierActor>,
-        server_addr: Addr<GrpcServerActor>,
+        server_addr: Addr<ServerActor>,
         simulation_addr: Addr<SimulationActor>,
         metrics_addr: Addr<MetricsManagerActor>,
-    ) -> Self {
+    ) -> Self
+    where
+        ServerActor: Actor<Context=Context<ServerActor>> + Handler<ControllerCommandMessage>,
+    {
         Self {
             agent_id,
             notifier_addr,
-            server_addr,
+            cmd_recipient: server_addr.recipient(),
             simulation_addr,
             metrics_addr,
             last_sent_metrics: vec![],
@@ -227,7 +230,7 @@ impl Handler<ConnectedClientMessage> for AgentCoreActor {
             .collect();
 
         let sim_addr = self.simulation_addr.clone();
-        let server_addr = self.server_addr.clone();
+        let server_addr = self.cmd_recipient.clone();
         let agent_id = self.agent_id;
 
         Box::pin(async move {

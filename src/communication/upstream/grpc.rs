@@ -15,6 +15,7 @@ use crate::agent::actor::{AgentCoreActor, RegisterAgentClientMsg};
 use crate::communication::protobuf::grpc::hailstorm_service_client::HailstormServiceClient;
 use crate::communication::message::SendAgentMessage;
 use crate::communication::protobuf::grpc::{AgentMessage, ControllerCommand};
+use crate::communication::upstream::contract::UpstreamAgentActor;
 
 struct UpstreamConnection {
     client: HailstormServiceClient<Channel>,
@@ -22,13 +23,13 @@ struct UpstreamConnection {
     cmd_sender: Sender<ControllerCommand>,
 }
 
-pub struct UpstreamAgentActor {
+pub struct GrpcUpstreamAgentActor {
     url: String,
     core_addr: Addr<AgentCoreActor>,
     connection: Option<UpstreamConnection>,
 }
 
-impl Actor for UpstreamAgentActor {
+impl Actor for GrpcUpstreamAgentActor {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
@@ -75,8 +76,11 @@ impl Actor for UpstreamAgentActor {
 }
 
 
-impl UpstreamAgentActor {
-    pub async fn new(url: String, core_addr: Addr<AgentCoreActor>) -> Result<Self, tonic::transport::Error> {
+impl UpstreamAgentActor for GrpcUpstreamAgentActor {
+    type Config = String;
+    type InitializationError = tonic::transport::Error;
+
+    fn new(url: String, core_addr: Addr<AgentCoreActor>) -> Result<Self, tonic::transport::Error> {
         Ok(Self { url, core_addr, connection: None })
     }
 }
@@ -97,7 +101,7 @@ struct EstablishConnection {
     attempt: u32,
 }
 
-impl Handler<EstablishConnection> for UpstreamAgentActor {
+impl Handler<EstablishConnection> for GrpcUpstreamAgentActor {
     type Result = ResponseActFuture<Self, Result<(), GrpcConnectionError>>;
 
     fn handle(&mut self, msg: EstablishConnection, _ctx: &mut Self::Context) -> Self::Result {
@@ -151,7 +155,7 @@ fn truncated_exponential_backoff(attempt_n: u32, max_backoff: Duration) -> Durat
     min(Duration::from_secs(2_u32.pow(attempt_n) as u64).add(Duration::from_millis(thread_rng().gen_range(0..1000))), max_backoff)
 }
 
-impl Handler<SendAgentMessage> for UpstreamAgentActor {
+impl Handler<SendAgentMessage> for GrpcUpstreamAgentActor {
     type Result = ResponseFuture<()>;
 
     fn handle(&mut self, SendAgentMessage(msg): SendAgentMessage, _ctx: &mut Self::Context) -> Self::Result {
@@ -170,7 +174,7 @@ impl Handler<SendAgentMessage> for UpstreamAgentActor {
     }
 }
 
-impl StreamHandler<ControllerCommand> for UpstreamAgentActor {
+impl StreamHandler<ControllerCommand> for GrpcUpstreamAgentActor {
     fn handle(&mut self, item: ControllerCommand, _ctx: &mut Self::Context) {
         if let Some(connection) = self.connection.as_ref() {
             let out = connection.cmd_sender.try_send(item);
