@@ -21,8 +21,8 @@ pub struct AgentBuilder<ContextBuilder, UpstreamCfg, DownstreamCfg> {
 }
 
 pub struct AgentRuntime<Upstream: UpstreamAgentActor> {
-    server: Addr<GrpcServerActor>,
-    clients: Vec<Addr<Upstream>>,
+    pub server: Addr<GrpcServerActor>,
+    pub clients: Vec<Addr<Upstream>>,
 }
 
 impl<ContextBuilder, UpstreamCfg, DownstreamCfg> AgentBuilder<ContextBuilder, UpstreamCfg, DownstreamCfg>
