@@ -195,7 +195,7 @@ impl Handler<RegisterAgentClientMsg> for AgentCoreActor {
 #[derive(actix::Message)]
 #[rtype(result = "()")]
 pub struct ConnectedClientMessage {
-    message: ControllerCommand,
+    pub message: ControllerCommand,
 }
 
 impl From<&Command> for Option<SimulationCommand> {
