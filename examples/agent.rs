@@ -4,7 +4,6 @@ use config::{Config, ConfigError, Environment, File};
 use rand::{RngCore, thread_rng};
 use serde::Deserialize;
 use hailstorm::agent::builder::AgentBuilder;
-use hailstorm::communication::upstream::grpc::GrpcUpstreamAgentActor;
 use hailstorm::simulation::rune::extension;
 use hailstorm::simulation::rune::extension::env::EnvModuleConf;
 use hailstorm::simulation::rune::extension::storage::initializer::empty::EmptyInitializer;
@@ -41,7 +40,7 @@ async fn main() {
     AgentBuilder {
         agent_id: config.agent_id
             .unwrap_or_else(|| thread_rng().next_u32()),
-        address: config.address
+        downstream: config.address
             .to_socket_addrs().unwrap().next().unwrap(),
         upstream: config.upstream
             .unwrap_or_default(),
@@ -52,5 +51,5 @@ async fn main() {
 
             ctx
         },
-    }.launch::<GrpcUpstreamAgentActor>().await;
+    }.launch_grpc().await;
 }

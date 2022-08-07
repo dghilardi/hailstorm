@@ -13,7 +13,6 @@ use crate::agent::metrics::manager_actor::{ActionMetricsFamilySnapshot, FetchAct
 use crate::communication::protobuf::grpc::{AgentUpdate, ControllerCommand};
 use crate::communication::message::{ControllerCommandMessage, SendAgentMessage};
 use crate::communication::notifier_actor::{RegisterAgentUpdateSender, UpdatesNotifierActor};
-use crate::communication::server_actor::GrpcServerActor;
 use crate::MultiAgentUpdateMessage;
 use crate::communication::protobuf::grpc;
 use crate::communication::protobuf::grpc::command_item::Command;

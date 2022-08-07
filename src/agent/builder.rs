@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::ops::Add;
 use actix::{Actor, Addr, AsyncContext, Context};
-use futures::future::try_join_all;
 use tonic::transport::Server;
 use crate::agent::actor::AgentCoreActor;
 use crate::agent::metrics::manager_actor::MetricsManagerActor;
@@ -15,18 +13,23 @@ use crate::communication::upstream::contract::UpstreamAgentActor;
 use crate::simulation::actor::simulation::SimulationActor;
 use crate::simulation::bot::registry::BotRegistry;
 
-pub struct AgentBuilder <ContextBuilder, UpstreamCfg> {
+pub struct AgentBuilder<ContextBuilder, UpstreamCfg, DownstreamCfg> {
     pub agent_id: u32,
-    pub address: SocketAddr,
+    pub downstream: DownstreamCfg,
     pub upstream: HashMap<String, UpstreamCfg>,
     pub rune_context_builder: ContextBuilder,
 }
 
-impl <ContextBuilder, UpstreamCfg> AgentBuilder<ContextBuilder, UpstreamCfg>
-where
-    ContextBuilder: FnOnce(Addr<SimulationActor>) -> rune::Context,
+pub struct AgentRuntime<Upstream: UpstreamAgentActor> {
+    server: Addr<GrpcServerActor>,
+    clients: Vec<Addr<Upstream>>,
+}
+
+impl<ContextBuilder, UpstreamCfg, DownstreamCfg> AgentBuilder<ContextBuilder, UpstreamCfg, DownstreamCfg>
+    where
+        ContextBuilder: FnOnce(Addr<SimulationActor>) -> rune::Context,
 {
-    pub async fn launch<Upstream: UpstreamAgentActor<Config=UpstreamCfg>>(self) {
+    pub fn launch<Upstream: UpstreamAgentActor<Config=UpstreamCfg>>(self) -> AgentRuntime<Upstream> {
         let metrics_addr = MetricsManagerActor::start_default();
 
         let simulation_ctx: Context<SimulationActor> = Context::new();
@@ -49,14 +52,13 @@ where
             log::warn!("No parents defined");
         }
 
-        let clients = Self::initialize_clients::<Upstream>(self.upstream, core_addr);
+        let clients = Self::initialize_clients::<Upstream>(self.upstream, core_addr)
+            .expect("Error initializing clients");
 
-        let hailstorm_server = HailstormGrpcServer::new(server_actor.recipient());
-        Server::builder()
-            .add_service(grpc::hailstorm_service_server::HailstormServiceServer::new(hailstorm_server))
-            .serve(self.address)
-            .await
-            .unwrap();
+        AgentRuntime {
+            server: server_actor,
+            clients,
+        }
     }
 
     fn initialize_clients<Upstream: UpstreamAgentActor>(cfg: HashMap<String, Upstream::Config>, core_addr: Addr<AgentCoreActor>) -> Result<Vec<Addr<Upstream>>, Upstream::InitializationError> {
@@ -67,5 +69,22 @@ where
             .map(Actor::start)
             .collect();
         Ok(clients)
+    }
+}
+
+impl<ContextBuilder> AgentBuilder<ContextBuilder, String, SocketAddr>
+    where
+        ContextBuilder: FnOnce(Addr<SimulationActor>) -> rune::Context,
+{
+    pub async fn launch_grpc(self) {
+        let address = self.downstream.clone();
+        let runtime = self.launch::<GrpcUpstreamAgentActor>();
+
+        let hailstorm_server = HailstormGrpcServer::new(runtime.server.recipient());
+        Server::builder()
+            .add_service(grpc::hailstorm_service_server::HailstormServiceServer::new(hailstorm_server))
+            .serve(address)
+            .await
+            .unwrap();
     }
 }
