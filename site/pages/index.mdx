@@ -1,0 +1,15 @@
+import Bleed from 'nextra-theme-docs/bleed'
+import Image from '../assets/hailstorm_man.svg'
+
+# Hailstorm
+
+![Logo](../assets/hailstorm_man.png)
+
+**Hailstorm** is a stress test library with focus on extensibility and distributed execution.
+
+## Glossary
+
+ * **Controller** it represents the entrypoint, it manages and delegate tasks to the workers that connects to it, and collect metrics.
+ * **Agent** it represents the worker, it can be connected directly to the controller or indirectly through one or more agents.
+ * **Model** it represents the behaviour that a single instance should follow during its lifetime.
+ * **Bot** it represents a single instance of a model.
