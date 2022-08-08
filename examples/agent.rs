@@ -53,3 +53,18 @@ async fn main() {
         },
     }.launch_grpc().await;
 }
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn asd() {
+        let transcod = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        for (pos, value) in [(4, 0), (2,0), (0,0)] {
+            for i in 0..64 {
+                if (i >> pos) & 1 == value {
+                    println!("[{pos}:{value}];{i};{}", transcod.chars().nth(i).unwrap()); // 15922389 - 1998186
+                }
+            }
+        }
+    }
+}

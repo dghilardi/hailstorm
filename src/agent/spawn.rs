@@ -6,8 +6,8 @@ use crate::communication::upstream::contract::UpstreamAgentActor;
 use crate::simulation::actor::simulation::SimulationActor;
 
 pub struct AgentHandle<Upstream: UpstreamAgentActor> {
-    handle: JoinHandle<()>,
-    runtime: AgentRuntime<Upstream>,
+    pub handle: JoinHandle<()>,
+    pub runtime: AgentRuntime<Upstream>,
 }
 
 impl<ContextBuilder, UpstreamCfg, DownstreamCfg> AgentBuilder<ContextBuilder, UpstreamCfg, DownstreamCfg>
