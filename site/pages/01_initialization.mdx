@@ -1,1 +1,43 @@
 # Project
+
+## Dependency
+
+Add hailstorm dependency in your `Cargo.toml`
+
+```toml
+hailstorm = "0.1.2"
+```
+
+## Initialize Agent
+
+```rust
+AgentBuilder {
+    agent_id: thread_rng().next_u32(),
+    downstream: String::from("0.0.0.0:50151")
+        .to_socket_addrs().unwrap().next().unwrap(),
+    upstream: [(String::from("controller"), String::from("http://127.0.0.1:50051"))]
+        .into_iter()
+        .collect(),
+    rune_context_builder: |_sim| { // rune context can be customized using modules
+        let mut ctx = rune::Context::with_default_modules()
+            .expect("Error loading default rune modules");
+
+        ctx.install(&extension::storage::module(StorageModuleArgs { 
+                initializer: EmptyInitializer 
+            } ).expect("Error initializing storage extension module"))
+            .expect("Error loading storage extension module");
+
+        ctx.install(&extension::env::module(EnvModuleConf { 
+                prefix: Some(String::from("hsa")) 
+            }).expect("Error initializing env extension module"))
+            .expect("Error loading env extension module");
+
+        ctx
+    },
+}
+// this will use grpc client to connect to upstream and launch 
+// a grpc server to accept downstream connections
+.launch_grpc().await;
+```
+
+## Initialize Controller
