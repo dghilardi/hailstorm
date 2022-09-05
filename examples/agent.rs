@@ -12,6 +12,7 @@ use hailstorm::simulation::rune::extension::storage::StorageModuleArgs;
 #[derive(Deserialize)]
 pub struct HailstormAgentConfig {
     pub agent_id: Option<u32>,
+    pub max_running_bots: usize,
     pub address: String,
     pub upstream: Option<HashMap<String, String>>,
 }
@@ -40,6 +41,7 @@ async fn main() {
     AgentBuilder {
         agent_id: config.agent_id
             .unwrap_or_else(|| thread_rng().next_u32()),
+        max_running_bots: config.max_running_bots,
         downstream: config.address
             .to_socket_addrs().unwrap().next().unwrap(),
         upstream: config.upstream

@@ -52,6 +52,7 @@ zenv -f .env.controller -- ./target/release/examples/controller
 Environment variables definition
 ```sh
 # .env.agent
+hs_max_running_bots=1000
 
 hs_upstream.lvl1=http://localhost:50051
 ```

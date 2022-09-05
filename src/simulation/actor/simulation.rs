@@ -12,6 +12,7 @@ use crate::utils::actix::synchro_context::WeakContext;
 
 pub struct SimulationActor {
     agent_id: u32,
+    max_running_bots: usize,
     start_ts: Option<SystemTime>,
     bot_registry: BotRegistry,
     agents_count: u32,
@@ -28,9 +29,10 @@ impl Actor for SimulationActor {
 }
 
 impl SimulationActor {
-    pub fn new(agent_id: u32, bot_registry: BotRegistry) -> Self {
+    pub fn new(agent_id: u32, max_running_bots: usize, bot_registry: BotRegistry) -> Self {
         Self {
             agent_id,
+            max_running_bots,
             start_ts: None,
             bot_registry,
             agents_count: 1,
@@ -75,7 +77,8 @@ impl SimulationActor {
         if let Some(elapsed) = maybe_elapsed {
             for (model_name, shape) in self.model_shapes.iter() {
                 let shape_val = shape(elapsed);
-                let count = Self::normalize_count(shape_val, self.agent_id, self.agents_count);
+                let count = Self::normalize_count(shape_val, self.agent_id, self.agents_count)
+                    .min(self.max_running_bots);
 
                 let model = if let Some(mu) = self.bots.get_mut(model_name) {
                     mu
