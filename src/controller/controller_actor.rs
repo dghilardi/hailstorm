@@ -56,6 +56,7 @@ impl Handler<MultiAgentUpdateMessage> for ControllerActor {
         let post_handle_agents_count = self.count_agents();
 
         let cmd_fut = if pre_handle_agents_count != post_handle_agents_count {
+            log::info!("Update agents count {pre_handle_agents_count} -> {post_handle_agents_count}");
             Some(self.send_broadcast(vec![Command::UpdateAgentsCount(post_handle_agents_count as u32)]))
         } else {
             None
