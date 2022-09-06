@@ -23,9 +23,9 @@ tokio-stream = "0.1.8"
 actix = "0.13.0"
 pin-project-lite = "0.2"
 
-tonic = "0.7.2"
-prost = "0.10.3"
-prost-types = "0.10.1"
+tonic = "0.8.0"
+prost = "0.11.0"
+prost-types = "0.11.0"
 
 rune = "0.12.0"
 rune-modules = { version = "0.12.0", features = ["http", "json"] }
@@ -42,4 +42,4 @@ env_logger = "0.9.0"
 clap = { version = "3.2.5", features = ["derive"] }
 
 [build-dependencies]
-tonic-build = "0.7.2"
+tonic-build = "0.8.0"
