@@ -4,6 +4,7 @@ use config::{Config, ConfigError, Environment, File};
 use rand::{RngCore, thread_rng};
 use serde::Deserialize;
 use hailstorm::agent::builder::AgentBuilder;
+use hailstorm::simulation::actor::simulation::SimulationParams;
 use hailstorm::simulation::rune::extension;
 use hailstorm::simulation::rune::extension::env::EnvModuleConf;
 use hailstorm::simulation::rune::extension::storage::initializer::empty::EmptyInitializer;
@@ -12,9 +13,24 @@ use hailstorm::simulation::rune::extension::storage::StorageModuleArgs;
 #[derive(Deserialize)]
 pub struct HailstormAgentConfig {
     pub agent_id: Option<u32>,
-    pub max_running_bots: usize,
+    pub simulation: SimulationConfig,
     pub address: String,
     pub upstream: Option<HashMap<String, String>>,
+}
+
+#[derive(Deserialize)]
+pub struct SimulationConfig {
+    pub running_max: Option<usize>,
+    pub rate_max: Option<usize>,
+}
+
+impl From<SimulationConfig> for SimulationParams {
+    fn from(cfg: SimulationConfig) -> Self {
+        Self {
+            max_running: cfg.running_max,
+            max_rate: cfg.rate_max,
+        }
+    }
 }
 
 pub fn compose_config<'de, CFG: Deserialize<'de>>(external_path: &str) -> Result<CFG, ConfigError> {
@@ -41,7 +57,7 @@ async fn main() {
     AgentBuilder {
         agent_id: config.agent_id
             .unwrap_or_else(|| thread_rng().next_u32()),
-        max_running_bots: config.max_running_bots,
+        simulation_params: config.simulation.into(),
         downstream: config.address
             .to_socket_addrs().unwrap().next().unwrap(),
         upstream: config.upstream

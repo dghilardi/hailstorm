@@ -10,12 +10,12 @@ use crate::communication::notifier_actor::UpdatesNotifierActor;
 use crate::communication::server::HailstormGrpcServer;
 use crate::communication::server_actor::GrpcServerActor;
 use crate::communication::upstream::contract::UpstreamAgentActor;
-use crate::simulation::actor::simulation::SimulationActor;
+use crate::simulation::actor::simulation::{SimulationActor, SimulationParams};
 use crate::simulation::bot::registry::BotRegistry;
 
 pub struct AgentBuilder<ContextBuilder, UpstreamCfg, DownstreamCfg> {
     pub agent_id: u32,
-    pub max_running_bots: usize,
+    pub simulation_params: SimulationParams,
     pub downstream: DownstreamCfg,
     pub upstream: HashMap<String, UpstreamCfg>,
     pub rune_context_builder: ContextBuilder,
@@ -40,7 +40,7 @@ impl<ContextBuilder, UpstreamCfg, DownstreamCfg> AgentBuilder<ContextBuilder, Up
 
         let updater_addr = UpdatesNotifierActor::create(|_| UpdatesNotifierActor::new());
         let server_actor = GrpcServerActor::create(|_| GrpcServerActor::new(updater_addr.clone().recipient()));
-        let simulation_actor = simulation_ctx.run(SimulationActor::new(self.agent_id, self.max_running_bots, bot_registry));
+        let simulation_actor = simulation_ctx.run(SimulationActor::new(self.agent_id, self.simulation_params, bot_registry));
         let core_addr = AgentCoreActor::create(|_| AgentCoreActor::new(
             self.agent_id,
             updater_addr.clone(),

@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 use actix::{Actor, AsyncContext, Context, Handler, Message, MessageResponse, ResponseFuture, WrapFuture};
@@ -12,12 +12,18 @@ use crate::utils::actix::synchro_context::WeakContext;
 
 pub struct SimulationActor {
     agent_id: u32,
-    max_running_bots: usize,
+    simulation_params: SimulationParams,
     start_ts: Option<SystemTime>,
     bot_registry: BotRegistry,
     agents_count: u32,
     model_shapes: HashMap<String, Box<dyn Fn(f64) -> f64>>,
     bots: HashMap<String, BotModel>,
+}
+
+
+pub struct SimulationParams {
+    pub max_running: Option<usize>,
+    pub max_rate: Option<usize>,
 }
 
 impl Actor for SimulationActor {
@@ -29,10 +35,10 @@ impl Actor for SimulationActor {
 }
 
 impl SimulationActor {
-    pub fn new(agent_id: u32, max_running_bots: usize, bot_registry: BotRegistry) -> Self {
+    pub fn new(agent_id: u32, simulation_params: SimulationParams, bot_registry: BotRegistry) -> Self {
         Self {
             agent_id,
-            max_running_bots,
+            simulation_params,
             start_ts: None,
             bot_registry,
             agents_count: 1,
@@ -77,8 +83,10 @@ impl SimulationActor {
         if let Some(elapsed) = maybe_elapsed {
             for (model_name, shape) in self.model_shapes.iter() {
                 let shape_val = shape(elapsed);
-                let count = Self::normalize_count(shape_val, self.agent_id, self.agents_count)
-                    .min(self.max_running_bots);
+                let count = match (Self::normalize_count(shape_val, self.agent_id, self.agents_count), self.simulation_params.max_running) {
+                    (normalized_count, Some(max_running)) => min(normalized_count, max_running),
+                    (normalized_count, None) => normalized_count,
+                };
 
                 let model = if let Some(mu) = self.bots.get_mut(model_name) {
                     mu
@@ -102,7 +110,11 @@ impl SimulationActor {
                         // running number is as expected
                     }
                     Ordering::Greater => {
-                        let spawn_count = count - running_count;
+                        let spawn_count = match (count - running_count, self.simulation_params.max_rate) {
+                            (running_diff, Some(max_rate)) => min(running_diff, max_rate),
+                            (running_diff, None) => running_diff
+                        };
+
                         for _idx in 0..spawn_count {
                             model.spawn_bot(ctx.address());
                         }
