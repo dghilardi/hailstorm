@@ -105,6 +105,9 @@ impl Handler<EstablishConnection> for GrpcUpstreamAgentActor {
     type Result = ResponseActFuture<Self, Result<(), GrpcConnectionError>>;
 
     fn handle(&mut self, msg: EstablishConnection, _ctx: &mut Self::Context) -> Self::Result {
+        let url = self.url.clone();
+        let attempt = msg.attempt;
+
         let actor_future = HailstormServiceClient::connect(self.url.clone())
             .map_err(|err| GrpcConnectionError::Connection(err.to_string()))
             .into_actor(self)
@@ -137,7 +140,7 @@ impl Handler<EstablishConnection> for GrpcUpstreamAgentActor {
                 let address = ctx.address();
                 async move {
                     if let Err(err) = result {
-                        log::error!("Error connecting to parent - {err}");
+                        log::error!("Error connecting to parent '{url}' (attempt {attempt} - {err}");
                         actix::clock::sleep(truncated_exponential_backoff(msg.attempt, Duration::from_secs(300))).await;
                         address.send(EstablishConnection { attempt: msg.attempt + 1 }).await
                             .map_err(|err| GrpcConnectionError::Internal(err.to_string()))?
