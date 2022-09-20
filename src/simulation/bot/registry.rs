@@ -86,16 +86,25 @@ impl BotRegistry {
                     });
                 acc
             }).into_iter()
-            .filter(|(_k, v)|
-                v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("new".into()))) &&
-                    v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("register_bot".into())))
-            )
+            .filter(|(k, v)| {
+                let has_new_constructor= v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("new".into())));
+                let has_register_bot_fn = v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("register_bot".into())));
+                let is_a_bot = has_new_constructor && has_register_bot_fn;
+
+                if !is_a_bot {
+                    log::debug!("Skipping {k} it is not a bot - has new: {has_new_constructor}, has register: {has_register_bot_fn}");
+                }
+                is_a_bot
+            })
             .flat_map(|(k, _sig)| {
                 let mut bot = BotBehaviour::default();
                 let register_out = vm.call(&[k.clone(), String::from("register_bot")], (&mut bot, ));
 
                 match register_out {
-                    Ok(_) => Some((k, bot)),
+                    Ok(_) => {
+                        log::debug!("Registering {k}");
+                        Some((k, bot))
+                    },
                     Err(err) => {
                         log::error!("Error: {err}");
                         None
