@@ -56,3 +56,17 @@ For each model defined in the script a shape expression can be defined.
 
 Expressions are evaluated by hailstorm once a second by valorizing t variable with the number of seconds passed from the start of the simulation.
 Instances of the model are then created or removed to match the count.
+
+Some custom functions are defined:
+
+<center>
+
+ |     function      |            plot             |
+ |:-----------------:|:---------------------------:|
+ | `rect(t)`         | ![rect](../assets/rect.png) |
+ | `tri(t)`          | ![rect](../assets/tri.png)  |
+ | `step(t)`         | ![rect](../assets/step.png) |
+ | `trapz(t,B,b)`    | ![rect](../assets/trapz.png) |
+ | `costrapz(t,B,b)` | ![rect](../assets/costrapz.png) |
+
+</center>
