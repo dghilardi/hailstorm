@@ -20,7 +20,7 @@ pin_project! {
     /// # use std::io;
     /// use std::time::Duration;
     /// use actix::prelude::*;
-    /// use actix::utils::SynchroIntervalFunc;
+    /// use hailstorm::utils::actix::synchro_interval_func::SynchroIntervalFunc;
     ///
     /// struct MyActor;
     ///
