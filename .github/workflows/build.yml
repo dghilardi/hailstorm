@@ -10,6 +10,11 @@ jobs:
     permissions:
       contents: write
     steps:
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v1
+      with:
+        version: '3.x'
+
     - name: Checkout
       uses: actions/checkout@v1
 

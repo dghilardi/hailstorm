@@ -16,5 +16,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v1
+      with:
+        version: '3.x'
+    
     - name: Run tests
       run: cargo test --verbose
