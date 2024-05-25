@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use actix::{Actor, Addr, Handler};
 use rune::{Context, Diagnostics, Hash, Source, Sources, Unit, Vm};
-use rune::compile::{Component, Item};
+use rune::compile::{Component, ItemBuf};
 use rune::runtime::debug::DebugArgs;
 use rune::runtime::RuntimeContext;
 use crate::agent::metrics::manager_actor::{StartActionTimer, StopActionTimer};
@@ -25,7 +25,7 @@ pub struct BotRegistry {
 #[derive(Debug)]
 pub struct FunSignature {
     hash: Hash,
-    path: Item,
+    path: ItemBuf,
     args: DebugArgs,
 }
 
