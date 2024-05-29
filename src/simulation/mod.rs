@@ -1,8 +1,8 @@
-pub mod error;
-pub mod bot;
-pub mod rune;
-mod sequential_id_generator;
 mod bot_model;
-pub mod compound_id;
+mod sequential_id_generator;
+pub(crate) mod facade;
 pub mod actor;
-pub mod facade;
+pub mod bot;
+pub mod compound_id;
+pub mod error;
+pub mod rune;

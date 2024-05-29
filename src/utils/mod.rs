@@ -1,2 +1,2 @@
-pub mod varint;
+pub(crate) mod varint;
 pub mod actix;

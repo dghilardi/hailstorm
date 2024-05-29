@@ -5,7 +5,7 @@ pub use communication::protobuf::grpc;
 pub use communication::server;
 pub use communication::message::MultiAgentUpdateMessage;
 
-pub mod communication;
+mod communication;
 pub mod agent;
 pub mod simulation;
 pub mod controller;
