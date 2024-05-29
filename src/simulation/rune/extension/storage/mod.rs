@@ -1,6 +1,6 @@
 mod bot_storage;
-mod registry;
-mod module;
 pub mod initializer;
+mod module;
+mod registry;
 
 pub use module::{module, StorageModuleArgs};

@@ -12,8 +12,14 @@ impl SequentialIdGenerator {
             self.last_generated_id += 1;
             self.last_generated_id
         } else {
-            let released_id = *self.released_ids.iter().next().expect("No released id available");
-            self.released_ids.take(&released_id).expect("Error taking released id")
+            let released_id = *self
+                .released_ids
+                .iter()
+                .next()
+                .expect("No released id available");
+            self.released_ids
+                .take(&released_id)
+                .expect("Error taking released id")
         }
     }
 
@@ -27,7 +33,8 @@ impl SequentialIdGenerator {
                     break;
                 }
             }
-            self.released_ids.retain(|idx| *idx < self.last_generated_id);
+            self.released_ids
+                .retain(|idx| *idx < self.last_generated_id);
         } else {
             self.released_ids.insert(id);
         }

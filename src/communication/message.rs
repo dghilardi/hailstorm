@@ -1,5 +1,5 @@
-use crate::communication::protobuf::grpc::{ControllerCommand, AgentUpdate};
 use crate::communication::protobuf::grpc::AgentMessage;
+use crate::communication::protobuf::grpc::{AgentUpdate, ControllerCommand};
 
 #[derive(actix::Message)]
 #[rtype(result = "()")]

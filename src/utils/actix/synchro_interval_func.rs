@@ -1,10 +1,10 @@
+use actix::clock::{sleep_until, Sleep};
+use actix::{Actor, ActorStream};
+use futures::ready;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use actix::{Actor, ActorStream};
-use actix::clock::{Sleep, sleep_until};
-use futures::ready;
 
 use pin_project_lite::pin_project;
 use tokio::time::Instant;
@@ -59,8 +59,8 @@ pin_project! {
 impl<A: Actor> SynchroIntervalFunc<A> {
     /// Creates a new `SynchroIntervalFunc` with the given interval duration.
     pub fn new<F>(dur: Duration, f: F) -> SynchroIntervalFunc<A>
-        where
-            F: FnMut(&mut A, &mut A::Context) + 'static,
+    where
+        F: FnMut(&mut A, &mut A::Context) + 'static,
     {
         Self {
             f: Box::new(f),

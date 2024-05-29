@@ -1,8 +1,8 @@
+use crate::communication::message::ControllerCommandMessage;
+use crate::communication::protobuf::grpc::ControllerCommand;
 use actix::{Actor, ActorContext, Context, Handler, ResponseFuture};
 use futures::future;
 use tokio::sync::mpsc::Sender;
-use crate::communication::protobuf::grpc::ControllerCommand;
-use crate::communication::message::ControllerCommandMessage;
 
 pub struct DownstreamAgentActor {
     cmd_sender: Sender<ControllerCommand>,
@@ -13,9 +13,7 @@ impl Actor for DownstreamAgentActor {
 }
 
 impl DownstreamAgentActor {
-    pub fn new(
-        cmd_sender: Sender<ControllerCommand>
-    ) -> Self {
+    pub fn new(cmd_sender: Sender<ControllerCommand>) -> Self {
         Self { cmd_sender }
     }
 }
@@ -23,7 +21,11 @@ impl DownstreamAgentActor {
 impl Handler<ControllerCommandMessage> for DownstreamAgentActor {
     type Result = ResponseFuture<()>;
 
-    fn handle(&mut self, ControllerCommandMessage(msg): ControllerCommandMessage, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(
+        &mut self,
+        ControllerCommandMessage(msg): ControllerCommandMessage,
+        ctx: &mut Self::Context,
+    ) -> Self::Result {
         if self.cmd_sender.is_closed() {
             log::warn!("Downstream channel is closed. Stopping actor");
             ctx.stop();

@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use rune::Any;
 use crate::simulation::rune::extension::storage::registry::StorageSlice;
+use rune::Any;
+use std::collections::HashMap;
 
 #[derive(Any)]
 pub struct BotStorage {
@@ -9,14 +9,8 @@ pub struct BotStorage {
 }
 
 impl BotStorage {
-    pub fn new(
-        init: HashMap<String, String>,
-        storage: StorageSlice,
-    ) -> Self {
-        Self {
-            init,
-            storage,
-        }
+    pub fn new(init: HashMap<String, String>, storage: StorageSlice) -> Self {
+        Self { init, storage }
     }
 
     pub fn read(&self, name: &str) -> Option<String> {

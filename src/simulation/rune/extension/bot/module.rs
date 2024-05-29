@@ -1,8 +1,8 @@
-use rune::{ContextError, Module};
+use super::behaviour::BotBehaviour;
+use crate::simulation::bot::params::BotParams;
 use crate::simulation::rune::extension::bot::behaviour::ActionTrigger;
 use crate::simulation::rune::extension::bot::state::BotState;
-use crate::simulation::bot::params::BotParams;
-use super::behaviour::BotBehaviour;
+use rune::{ContextError, Module};
 
 pub fn module() -> Result<Module, ContextError> {
     let mut module = Module::with_crate_item("hailstorm", &["bot"]);
@@ -13,8 +13,14 @@ pub fn module() -> Result<Module, ContextError> {
     module.inst_fn("set_interval_millis", BotBehaviour::set_interval_millis)?;
 
     module.ty::<ActionTrigger>()?;
-    module.function(&["ActionTrigger", "alive"], |weight| ActionTrigger::Alive { weight })?;
-    module.function(&["ActionTrigger", "enter_state"], |state: BotState| ActionTrigger::EnterState { state: state.into() })?;
+    module.function(&["ActionTrigger", "alive"], |weight| ActionTrigger::Alive {
+        weight,
+    })?;
+    module.function(&["ActionTrigger", "enter_state"], |state: BotState| {
+        ActionTrigger::EnterState {
+            state: state.into(),
+        }
+    })?;
 
     module.ty::<BotState>()?;
 

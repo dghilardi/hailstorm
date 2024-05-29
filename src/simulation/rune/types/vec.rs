@@ -1,5 +1,5 @@
-use std::vec;
 use crate::simulation::rune::types::value::OwnedValue;
+use std::vec;
 
 pub struct OwnedVec {
     inner: Vec<OwnedValue>,

@@ -1,14 +1,14 @@
+use super::timer::Timer;
+use crate::agent::metrics::timer::{ActionOutcome, ExecutionInfo};
+use actix::{Actor, Context, Handler, Message, MessageResult};
+use lazy_static::lazy_static;
+use ringbuf::RingBuffer;
 use std::cmp::min;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::{Add, Div};
 use std::time::{Duration, SystemTime};
-use actix::{Actor, Context, Handler, Message, MessageResult};
-use lazy_static::lazy_static;
-use ringbuf::RingBuffer;
-use time::{OffsetDateTime};
 use time::format_description::well_known::Rfc3339;
-use crate::agent::metrics::timer::{ActionOutcome, ExecutionInfo};
-use super::timer::Timer;
+use time::OffsetDateTime;
 
 #[derive(Clone, Default)]
 pub struct Metrics {
@@ -43,7 +43,9 @@ impl Default for MFSnapshotStorage {
 
 impl MFSnapshotStorage {
     pub fn add_snapshot(&mut self, timestamp: SystemTime, metrics: MetricsFamily) {
-        let out = self.buf_producer.push(MetricsFamilySnapshot { timestamp, metrics });
+        let out = self
+            .buf_producer
+            .push(MetricsFamilySnapshot { timestamp, metrics });
         if let Err(MetricsFamilySnapshot { timestamp, .. }) = out {
             log::error!("Error saving metrics snapshot {:?}", timestamp);
         } else {
@@ -59,7 +61,6 @@ impl MFSnapshotStorage {
         }
     }
 }
-
 
 #[derive(Default)]
 pub struct MetricsStorageActor {
@@ -95,7 +96,9 @@ impl MetricsStorageActor {
         let mut fst_incomplete_ts: Option<SystemTime> = None;
         self.pending.retain(|ts, timers| {
             if fst_incomplete_ts.map(|fst_ts| fst_ts > *ts).unwrap_or(true) {
-                if ts.add(Duration::from_secs(3600)) > SystemTime::now() && timers.iter().any(|t| t.get_execution().is_none()) {
+                if ts.add(Duration::from_secs(3600)) > SystemTime::now()
+                    && timers.iter().any(|t| t.get_execution().is_none())
+                {
                     fst_incomplete_ts = Some(*ts);
                     true
                 } else {
@@ -108,7 +111,12 @@ impl MetricsStorageActor {
                             status.histogram[idx] += 1;
                             status.sum += cs;
                         } else {
-                            log::warn!("dropping pending timer '{}'", OffsetDateTime::from(*ts).format(&Rfc3339).unwrap_or_default());
+                            log::warn!(
+                                "dropping pending timer '{}'",
+                                OffsetDateTime::from(*ts)
+                                    .format(&Rfc3339)
+                                    .unwrap_or_default()
+                            );
                         }
                     }
                     if self.snapshots.is_elapsed(*HIST_MAX_RES, *ts) {
@@ -130,7 +138,10 @@ fn compute_bucket_idx(value: u64) -> usize {
         .unwrap_or(0)
 }
 
-pub struct StartedTimer { pub id: u32, pub timestamp: SystemTime }
+pub struct StartedTimer {
+    pub id: u32,
+    pub timestamp: SystemTime,
+}
 
 #[derive(Message)]
 #[rtype(result = "StartedTimer")]
@@ -141,9 +152,7 @@ impl Handler<StartTimer> for MetricsStorageActor {
 
     fn handle(&mut self, _: StartTimer, _ctx: &mut Self::Context) -> Self::Result {
         let now = SystemTime::now();
-        let timers = self.pending
-            .entry(now)
-            .or_insert_with(Vec::new);
+        let timers = self.pending.entry(now).or_insert_with(Vec::new);
         let timer_id = timers.len() as u32;
         timers.push(Timer::empty(timer_id));
         MessageResult(StartedTimer {
@@ -168,7 +177,11 @@ impl Handler<StopTimer> for MetricsStorageActor {
             timer.set_execution(msg.execution.elapsed, msg.execution.outcome);
             self.process_pending();
         } else {
-            log::error!("No timer found with ts {:?} and id {}", msg.timer.timestamp, msg.timer.id);
+            log::error!(
+                "No timer found with ts {:?} and id {}",
+                msg.timer.timestamp,
+                msg.timer.id
+            );
         }
     }
 }
@@ -198,7 +211,10 @@ mod test {
         for v in 0..100 {
             let idx = compute_bucket_idx(v);
             assert!(v <= 2u64.pow(idx as u32), "v = {v}, idx = {idx}");
-            assert!(idx == 0 || v > 2u64.pow(idx as u32 - 1), "v = {v}, idx = {idx}");
+            assert!(
+                idx == 0 || v > 2u64.pow(idx as u32 - 1),
+                "v = {v}, idx = {idx}"
+            );
         }
     }
 }

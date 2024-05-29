@@ -4,7 +4,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum SimulationError {
     #[error("Bad Shape function - {0}")]
-    BadShape(String)
+    BadShape(String),
 }
 
 impl From<meval::Error> for SimulationError {

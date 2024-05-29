@@ -32,7 +32,11 @@ impl VarintEncode for u32 {
 #[derive(Debug, Error)]
 pub enum VarintDecodeError {
     #[error("Varint overflow expected {expected} bytes, found {found} bytes {arg:02X?}")]
-    Overflow { expected: usize, found: usize, arg: Vec<u8> },
+    Overflow {
+        expected: usize,
+        found: usize,
+        arg: Vec<u8>,
+    },
 }
 
 impl VarintDecode for u32 {
@@ -40,7 +44,11 @@ impl VarintDecode for u32 {
 
     fn from_varint(bytes: &[u8]) -> Result<Self, Self::Error> {
         if bytes.len() > 5 {
-            return Err(VarintDecodeError::Overflow { expected: 5, found: bytes.len(), arg: bytes.to_vec() });
+            return Err(VarintDecodeError::Overflow {
+                expected: 5,
+                found: bytes.len(),
+                arg: bytes.to_vec(),
+            });
         }
         let mut result = 0;
         for idx in 0..bytes.len() {
@@ -53,9 +61,7 @@ impl VarintDecode for u32 {
 
 impl<I: VarintEncode> VarintEncode for Vec<I> {
     fn to_varint(&self) -> Vec<u8> {
-        self.iter()
-            .flat_map(VarintEncode::to_varint)
-            .collect()
+        self.iter().flat_map(VarintEncode::to_varint).collect()
     }
 }
 
@@ -63,7 +69,8 @@ impl<I: VarintDecode> VarintDecode for Vec<I> {
     type Error = I::Error;
 
     fn from_varint(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let res = bytes.iter()
+        let res = bytes
+            .iter()
             .cloned()
             .fold(vec![Vec::<u8>::new()], |mut acc, byte| {
                 let last_vec = acc.last_mut().expect("At leas one vec is needed");
@@ -73,9 +80,7 @@ impl<I: VarintDecode> VarintDecode for Vec<I> {
                             last_vec.push(byte)
                         }
                     }
-                    Some(v) if (v & 1) == 0 => {
-                        last_vec.push(byte)
-                    }
+                    Some(v) if (v & 1) == 0 => last_vec.push(byte),
                     Some(_) => {
                         if byte > 0 {
                             acc.push(vec![byte])
@@ -95,8 +100,8 @@ impl<I: VarintDecode> VarintDecode for Vec<I> {
 
 #[cfg(test)]
 mod test {
-    use rand::{RngCore, thread_rng};
     use crate::utils::varint::{VarintDecode, VarintEncode};
+    use rand::{thread_rng, RngCore};
 
     #[test]
     fn test_varint() {
@@ -108,11 +113,7 @@ mod test {
 
     #[test]
     fn test_varint_vec() {
-        let arg = vec![
-            0,
-            thread_rng().next_u32(),
-            u32::MAX,
-        ];
+        let arg = vec![0, thread_rng().next_u32(), u32::MAX];
         let bytes = arg.to_varint();
         let decoded = Vec::<u32>::from_varint(&bytes).unwrap();
 

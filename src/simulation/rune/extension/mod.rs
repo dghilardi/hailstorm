@@ -1,4 +1,4 @@
 pub(crate) mod bot;
-pub(crate) mod metrics;
 pub mod env;
+pub(crate) mod metrics;
 pub mod storage;

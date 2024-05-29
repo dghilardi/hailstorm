@@ -1,14 +1,14 @@
-use std::collections::HashMap;
-use actix::{Actor, Addr, Context, Handler};
-use actix::dev::Request;
-use rune::Hash;
+use crate::simulation::actor::bot::{BotActor, BotState, ExecuteHandler, StopBot, TriggerHook};
+use crate::simulation::actor::simulation::BotStateChange;
+use crate::simulation::bot::model_factory::BotModelFactory;
 use crate::simulation::compound_id::CompoundId;
 use crate::simulation::rune::types::value::OwnedValue;
 use crate::simulation::sequential_id_generator::SequentialIdGenerator;
-use crate::simulation::actor::simulation::BotStateChange;
-use crate::simulation::bot::model_factory::BotModelFactory;
-use crate::simulation::actor::bot::{ExecuteHandler, StopBot, TriggerHook, BotActor, BotState};
 use crate::utils::varint::VarintDecode;
+use actix::dev::Request;
+use actix::{Actor, Addr, Context, Handler};
+use rune::Hash;
+use std::collections::HashMap;
 pub struct SimulationBot {
     state: BotState,
     addr: Addr<BotActor>,
@@ -57,31 +57,33 @@ impl BotModel {
             model_id,
             bot_factory: factory,
             id_generator: Default::default(),
-            bots: Default::default()
+            bots: Default::default(),
         }
     }
 
     pub fn spawn_bot<A>(&mut self, addr: Addr<A>)
-        where A: Actor<Context=Context<A>>
-        + Handler<BotStateChange>
+    where
+        A: Actor<Context = Context<A>> + Handler<BotStateChange>,
     {
         let usr_id = self.id_generator.next();
         let compound_id = CompoundId::new(self.agent_id, self.model_id, usr_id);
         let internal_id = compound_id.internal_id();
         let bot_behaviour = self.bot_factory.new_bot(compound_id);
 
-        self.bots.insert(internal_id, SimulationBot {
-            state: BotState::Running,
-            addr: BotActor::create(|_| BotActor::new(internal_id, addr, bot_behaviour)),
-        });
+        self.bots.insert(
+            internal_id,
+            SimulationBot {
+                state: BotState::Running,
+                addr: BotActor::create(|_| BotActor::new(internal_id, addr, bot_behaviour)),
+            },
+        );
     }
 
     pub fn count_by_state(&self) -> HashMap<BotState, usize> {
         let mut group_by_state = HashMap::new();
 
         for usr in self.bots.values() {
-            let entry = group_by_state.entry(usr.state)
-                .or_insert(0);
+            let entry = group_by_state.entry(usr.state).or_insert(0);
             *entry += 1;
         }
 
@@ -96,7 +98,8 @@ impl BotModel {
     }
 
     pub fn retain<F>(&mut self, mut condition: F)
-    where F: FnMut(&u64, &SimulationBot) -> bool
+    where
+        F: FnMut(&u64, &SimulationBot) -> bool,
     {
         self.bots.retain(|id, bot| {
             let outcome = condition(id, bot);
@@ -109,18 +112,20 @@ impl BotModel {
         })
     }
 
-    pub fn bots_mut(&mut self) -> impl Iterator<Item=&mut SimulationBot> {
+    pub fn bots_mut(&mut self) -> impl Iterator<Item = &mut SimulationBot> {
         self.bots.values_mut()
     }
 
     pub fn contains_id(&self, id: u64) -> bool {
-        let sub_ids = Vec::<u32>::from_varint(&id.to_be_bytes()).expect("Error converting from varint");
+        let sub_ids =
+            Vec::<u32>::from_varint(&id.to_be_bytes()).expect("Error converting from varint");
         sub_ids[0] == self.model_id && self.bots.contains_key(&id)
     }
 
     pub fn remove_bot(&mut self, id: u64) {
         self.bots.remove(&id);
-        let sub_ids = Vec::<u32>::from_varint(&id.to_be_bytes()).expect("Error converting from varint");
+        let sub_ids =
+            Vec::<u32>::from_varint(&id.to_be_bytes()).expect("Error converting from varint");
         self.id_generator.release_id(sub_ids[1]);
     }
 

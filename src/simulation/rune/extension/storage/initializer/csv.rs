@@ -1,9 +1,9 @@
+use super::StorageInitializerRegistry;
+use serde::Deserialize;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use serde::Deserialize;
-use super::StorageInitializerRegistry;
 
 #[derive(Debug)]
 struct SliceInit {
@@ -35,15 +35,16 @@ impl CsvStorageInitializer {
 
     fn load_slice(&self, name: &str) -> SliceInit {
         let filename = format!("{name}-{}.csv", self.agent_id);
-        let slice = if let Ok(mut values) = csv::Reader::from_path(self.base_path.join(Path::new(&filename))) {
-            values.deserialize()
-                .filter_map(|record: Result<CsvEntry, _>| {
-                    match record {
-                        Ok(entry) => Some(entry),
-                        Err(err) => {
-                            log::warn!("Error parsing csv entry - {err}");
-                            None
-                        }
+        let slice = if let Ok(mut values) =
+            csv::Reader::from_path(self.base_path.join(Path::new(&filename)))
+        {
+            values
+                .deserialize()
+                .filter_map(|record: Result<CsvEntry, _>| match record {
+                    Ok(entry) => Some(entry),
+                    Err(err) => {
+                        log::warn!("Error parsing csv entry - {err}");
+                        None
                     }
                 })
                 .fold(HashMap::new(), |mut acc, entry| {
@@ -53,9 +54,7 @@ impl CsvStorageInitializer {
         } else {
             Default::default()
         };
-        SliceInit {
-            values: slice,
-        }
+        SliceInit { values: slice }
     }
 }
 
@@ -67,7 +66,9 @@ impl StorageInitializerRegistry for CsvStorageInitializer {
             .borrow_mut()
             .entry(name.to_string())
             .or_insert_with(|| self.load_slice(name))
-            .values.get(&bot_id).cloned()
+            .values
+            .get(&bot_id)
+            .cloned()
             .unwrap_or_default()
     }
 }

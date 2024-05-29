@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use rune::{FromValue, ToValue, Value};
-use rune::runtime::{Bytes, Shared, StaticString, UnitStruct, VmError};
 use crate::simulation::rune::types::object::OwnedObject;
 use crate::simulation::rune::types::vec::OwnedVec;
+use rune::runtime::{Bytes, Shared, StaticString, UnitStruct, VmError};
+use rune::{FromValue, ToValue, Value};
+use std::sync::Arc;
 
 pub enum OwnedValue {
     /// The unit value.
@@ -74,23 +74,48 @@ impl FromValue for OwnedValue {
             Value::Char(v) => Ok(Self::Char(v)),
             Value::Integer(v) => Ok(Self::Integer(v)),
             Value::Float(v) => Ok(Self::Float(v)),
-            Value::Type(_) => Err(VmError::panic("Unexpected action return type 'Value::Type'")),
+            Value::Type(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::Type'",
+            )),
             Value::StaticString(v) => Ok(Self::StaticString(v)),
             Value::String(v) => Ok(Self::String(v.take()?)),
             Value::Bytes(v) => Ok(Self::Bytes(v.take()?)),
-            Value::Vec(v) => Ok(Self::Vec(OwnedVec::from_iter(v.take()?.into_iter().map(OwnedValue::from_value).collect::<Result<Vec<_>, _>>()?))),
-            Value::Tuple(_) => Err(VmError::panic("Unexpected action return type 'Value::Tuple'")),
-            Value::Object(v) => Ok(Self::Object(OwnedObject::from_iter(
-                v.take()?.into_iter()
-                    .map(|(k, v)| OwnedValue::from_value(v).map(|v| (k, v)))
-                    .collect::<Result<Vec<_>, _>>()?
+            Value::Vec(v) => Ok(Self::Vec(OwnedVec::from_iter(
+                v.take()?
+                    .into_iter()
+                    .map(OwnedValue::from_value)
+                    .collect::<Result<Vec<_>, _>>()?,
             ))),
-            Value::Range(_) => Err(VmError::panic("Unexpected action return type 'Value::Range'")),
-            Value::Future(_) => Err(VmError::panic("Unexpected action return type 'Value::Future'")),
-            Value::Stream(_) => Err(VmError::panic("Unexpected action return type 'Value::Stream'")),
-            Value::Generator(_) => Err(VmError::panic("Unexpected action return type 'Value::Generator'")),
-            Value::GeneratorState(_) => Err(VmError::panic("Unexpected action return type 'Value::GeneratorState'")),
-            Value::Option(v) => Ok(Self::Option(v.take()?.map(OwnedValue::from_value).transpose()?.map(Box::new))),
+            Value::Tuple(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::Tuple'",
+            )),
+            Value::Object(v) => Ok(Self::Object(OwnedObject::from_iter(
+                v.take()?
+                    .into_iter()
+                    .map(|(k, v)| OwnedValue::from_value(v).map(|v| (k, v)))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ))),
+            Value::Range(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::Range'",
+            )),
+            Value::Future(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::Future'",
+            )),
+            Value::Stream(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::Stream'",
+            )),
+            Value::Generator(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::Generator'",
+            )),
+            Value::GeneratorState(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::GeneratorState'",
+            )),
+            Value::Option(v) => Ok(Self::Option(
+                v.take()?
+                    .map(OwnedValue::from_value)
+                    .transpose()?
+                    .map(Box::new),
+            )),
             Value::Result(v) => {
                 let res = match v.take()? {
                     Ok(ok) => Ok(Box::new(OwnedValue::from_value(ok)?)),
@@ -99,12 +124,24 @@ impl FromValue for OwnedValue {
                 Ok(OwnedValue::Result(res))
             }
             Value::UnitStruct(v) => Ok(Self::UnitStruct(v.take()?)),
-            Value::TupleStruct(_) => Err(VmError::panic("Unexpected action return type 'Value::TupleStruct'")),
-            Value::Struct(_) => Err(VmError::panic("Unexpected action return type 'Value::Struct'")),
-            Value::Variant(_) => Err(VmError::panic("Unexpected action return type 'Value::Variant'")),
-            Value::Function(_) => Err(VmError::panic("Unexpected action return type 'Value::Function'")),
-            Value::Format(_) => Err(VmError::panic("Unexpected action return type 'Value::Format'")),
-            Value::Iterator(_) => Err(VmError::panic("Unexpected action return type 'Value::Iterator'")),
+            Value::TupleStruct(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::TupleStruct'",
+            )),
+            Value::Struct(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::Struct'",
+            )),
+            Value::Variant(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::Variant'",
+            )),
+            Value::Function(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::Function'",
+            )),
+            Value::Format(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::Format'",
+            )),
+            Value::Iterator(_) => Err(VmError::panic(
+                "Unexpected action return type 'Value::Iterator'",
+            )),
             Value::Any(_) => Err(VmError::panic("Unexpected action return type 'Value::Any'")),
         }
     }
@@ -141,12 +178,15 @@ impl ToValue for OwnedValue {
                 rune::runtime::Object::from_iter(
                     obj.into_iter()
                         .map(|(k, v)| v.to_value().map(|v| (k, v)))
-                        .collect::<Result<Vec<_>, _>>()?
-                )
+                        .collect::<Result<Vec<_>, _>>()?,
+                ),
             ))),
             OwnedValue::Vec(vec) => Ok(Value::Vec(Shared::new(
-                vec.into_iter().map(OwnedValue::to_value).collect::<Result<Vec<_>, _>>()?.into()
-            )))
+                vec.into_iter()
+                    .map(OwnedValue::to_value)
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into(),
+            ))),
         }
     }
 }

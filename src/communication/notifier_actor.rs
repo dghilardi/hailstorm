@@ -1,8 +1,8 @@
+use crate::communication::message::{MultiAgentUpdateMessage, SendAgentMessage};
+use crate::communication::protobuf::grpc::{AgentMessage, AgentUpdate};
+use actix::{Actor, AsyncContext, Context, Handler, Recipient};
 use std::collections::HashMap;
 use std::time::Duration;
-use actix::{Actor, AsyncContext, Context, Handler, Recipient};
-use crate::communication::protobuf::grpc::{AgentMessage, AgentUpdate};
-use crate::communication::message::{MultiAgentUpdateMessage, SendAgentMessage};
 
 #[derive(Default)]
 pub struct UpdatesNotifierActor {
@@ -25,14 +25,12 @@ impl UpdatesNotifierActor {
 
     fn send_data(&mut self) {
         let message = AgentMessage {
-            updates: self.frames
-                .drain()
-                .map(|(_idx, frame)| frame)
-                .collect()
+            updates: self.frames.drain().map(|(_idx, frame)| frame).collect(),
         };
 
         for client in self.connected_clients.iter() {
-            client.try_send(SendAgentMessage(message.clone()))
+            client
+                .try_send(SendAgentMessage(message.clone()))
                 .unwrap_or_else(|err| log::error!("Error sending frames {err:?}"));
         }
     }
@@ -45,7 +43,11 @@ pub struct RegisterAgentUpdateSender(pub Recipient<SendAgentMessage>);
 impl Handler<RegisterAgentUpdateSender> for UpdatesNotifierActor {
     type Result = ();
 
-    fn handle(&mut self, RegisterAgentUpdateSender(msg): RegisterAgentUpdateSender, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(
+        &mut self,
+        RegisterAgentUpdateSender(msg): RegisterAgentUpdateSender,
+        _ctx: &mut Self::Context,
+    ) -> Self::Result {
         self.connected_clients.push(msg);
     }
 }
@@ -53,7 +55,11 @@ impl Handler<RegisterAgentUpdateSender> for UpdatesNotifierActor {
 impl Handler<MultiAgentUpdateMessage> for UpdatesNotifierActor {
     type Result = ();
 
-    fn handle(&mut self, MultiAgentUpdateMessage(updates): MultiAgentUpdateMessage, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(
+        &mut self,
+        MultiAgentUpdateMessage(updates): MultiAgentUpdateMessage,
+        _ctx: &mut Self::Context,
+    ) -> Self::Result {
         for update in updates {
             self.frames.insert(update.update_id, update);
         }

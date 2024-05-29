@@ -1,5 +1,5 @@
-use thiserror::Error;
 use crate::utils::varint::{VarintDecode, VarintEncode};
+use thiserror::Error;
 
 #[derive(Clone)]
 pub struct CompoundId<AgentId> {
@@ -11,26 +11,28 @@ pub struct CompoundId<AgentId> {
 #[derive(Error, Debug)]
 pub enum CompoundIdParseError {
     #[error("Bad Format - {0}")]
-    BadFormat(String)
+    BadFormat(String),
 }
 
-impl <AgentId> CompoundId<AgentId> {
-    pub fn new(
-        agent_id: AgentId,
-        model_id: u32,
-        bot_id: u32,
-    ) -> Self {
+impl<AgentId> CompoundId<AgentId> {
+    pub fn new(agent_id: AgentId, model_id: u32, bot_id: u32) -> Self {
         Self {
             agent_id,
             model_id,
             bot_id,
         }
     }
-    pub fn from_internal_id(agent_id: AgentId, internal_id: u64) -> Result<Self, CompoundIdParseError> {
+    pub fn from_internal_id(
+        agent_id: AgentId,
+        internal_id: u64,
+    ) -> Result<Self, CompoundIdParseError> {
         let sub_ids = Vec::<u32>::from_varint(&internal_id.to_be_bytes())
             .map_err(|e| CompoundIdParseError::BadFormat(e.to_string()))?;
         if sub_ids.len() != 2 {
-            return Err(CompoundIdParseError::BadFormat(format!("Expected 2 subid in internal_id, found {}", sub_ids.len())));
+            return Err(CompoundIdParseError::BadFormat(format!(
+                "Expected 2 subid in internal_id, found {}",
+                sub_ids.len()
+            )));
         }
         Ok(Self {
             agent_id,
@@ -66,10 +68,6 @@ impl CompoundId<u32> {
     }
 
     pub fn into_bytes(self) -> Vec<u8> {
-        vec![
-            self.agent_id,
-            self.model_id,
-            self.bot_id,
-        ].to_varint()
+        vec![self.agent_id, self.model_id, self.bot_id].to_varint()
     }
 }

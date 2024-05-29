@@ -1,9 +1,9 @@
+use crate::simulation::actor::bot::BotState;
+use rand::{thread_rng, Rng};
+use rune::runtime::{Function, Shared};
+use rune::{Any, Hash};
 use std::collections::HashMap;
 use std::time::Duration;
-use rand::{Rng, thread_rng};
-use rune::{Any, Hash};
-use rune::runtime::{Function, Shared};
-use crate::simulation::actor::bot::BotState;
 
 #[derive(Clone, Debug, Any)]
 pub struct BotBehaviour {
@@ -38,19 +38,22 @@ impl Default for BotBehaviour {
 
 impl BotBehaviour {
     pub fn register_action(&mut self, trigger: ActionTrigger, action: Shared<Function>) {
-        let hash = action.take().expect("Error extracting action hash").type_hash();
+        let hash = action
+            .take()
+            .expect("Error extracting action hash")
+            .type_hash();
         match trigger {
             ActionTrigger::Alive { weight } => {
                 let weight = weight.max(0f32);
                 self.total_weight += weight as f64;
                 self.actions.push(BotAction { hash, weight });
-            },
+            }
             ActionTrigger::EnterState { state } => {
                 let overridden_action = self.hooks.insert(state, hash);
                 if let Some(overridden_hash) = overridden_action {
                     log::warn!("[{:?}] overridden: {} -> {}", state, overridden_hash, hash)
                 }
-            },
+            }
         }
     }
 
@@ -70,9 +73,7 @@ impl BotBehaviour {
     }
 
     pub fn hook_action(&self, state: BotState) -> Option<Hash> {
-        self.hooks
-            .get(&state)
-            .cloned()
+        self.hooks.get(&state).cloned()
     }
 
     pub fn get_interval(&self) -> Duration {

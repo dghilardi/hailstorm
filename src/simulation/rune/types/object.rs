@@ -1,5 +1,5 @@
-use std::collections::{btree_map, BTreeMap};
 use crate::simulation::rune::types::value::OwnedValue;
+use std::collections::{btree_map, BTreeMap};
 
 pub struct OwnedObject {
     inner: BTreeMap<String, OwnedValue>,

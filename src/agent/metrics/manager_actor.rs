@@ -1,13 +1,15 @@
-use std::collections::HashMap;
-use std::future::Future;
-use std::time::SystemTime;
 use actix::{Actor, Addr, Context, Handler, MailboxError, Message, ResponseFuture};
 use futures::future::join_all;
 use futures::FutureExt;
+use std::collections::HashMap;
+use std::future::Future;
+use std::time::SystemTime;
 
-use thiserror::Error;
-use crate::agent::metrics::storage_actor::{FetchMetrics, MetricsFamilySnapshot, MetricsStorageActor, StartedTimer, StartTimer, StopTimer};
+use crate::agent::metrics::storage_actor::{
+    FetchMetrics, MetricsFamilySnapshot, MetricsStorageActor, StartTimer, StartedTimer, StopTimer,
+};
 use crate::agent::metrics::timer::ExecutionInfo;
+use thiserror::Error;
 
 #[derive(Debug, Eq, Hash, PartialEq, Clone)]
 pub struct StorageKey {
@@ -21,11 +23,15 @@ pub struct MetricsStorage {
 }
 
 impl MetricsStorage {
-    pub fn start_timer(&mut self) -> impl Future<Output=Result<StartedTimer, MailboxError>> {
+    pub fn start_timer(&mut self) -> impl Future<Output = Result<StartedTimer, MailboxError>> {
         self.ts_last_received_metric = SystemTime::now();
         self.addr.send(StartTimer)
     }
-    pub fn stop_timer(&mut self, timer: StartedTimer, execution: ExecutionInfo) -> impl Future<Output=Result<(), MailboxError>> {
+    pub fn stop_timer(
+        &mut self,
+        timer: StartedTimer,
+        execution: ExecutionInfo,
+    ) -> impl Future<Output = Result<(), MailboxError>> {
         self.ts_last_received_metric = SystemTime::now();
         self.addr.send(StopTimer { timer, execution })
     }
@@ -93,21 +99,19 @@ impl Handler<StartActionTimer> for MetricsManagerActor {
             model: msg.model,
             action: msg.action,
         };
-        let metrics_storage = self.storages.entry(key.clone()).or_insert_with(Default::default);
+        let metrics_storage = self
+            .storages
+            .entry(key.clone())
+            .or_insert_with(Default::default);
         let out = metrics_storage.start_timer();
         Box::pin(async move {
             match out.await {
-                Ok(StartedTimer { id, timestamp }) => Ok(StartedActionTimer {
-                    key,
-                    id,
-                    timestamp,
-                }),
+                Ok(StartedTimer { id, timestamp }) => Ok(StartedActionTimer { key, id, timestamp }),
                 Err(err) => Err(ActionTimerError::InternalError(err.to_string())),
             }
         })
     }
 }
-
 
 #[derive(Message)]
 #[rtype(result = "Result<(), ActionTimerError>")]
@@ -119,14 +123,23 @@ pub struct StopActionTimer {
 impl Handler<StopActionTimer> for MetricsManagerActor {
     type Result = ResponseFuture<Result<(), ActionTimerError>>;
 
-    fn handle(&mut self, StopActionTimer { timer, execution }: StopActionTimer, _ctx: &mut Self::Context) -> Self::Result {
-        let stop_req = self.storages.get_mut(&timer.key)
+    fn handle(
+        &mut self,
+        StopActionTimer { timer, execution }: StopActionTimer,
+        _ctx: &mut Self::Context,
+    ) -> Self::Result {
+        let stop_req = self
+            .storages
+            .get_mut(&timer.key)
             .map(|ms| ms.stop_timer(timer.into(), execution));
         Box::pin(async move {
             if let Some(fut) = stop_req {
-                fut.await.map_err(|err| ActionTimerError::InternalError(err.to_string()))
+                fut.await
+                    .map_err(|err| ActionTimerError::InternalError(err.to_string()))
             } else {
-                Err(ActionTimerError::InternalError(String::from("Metrics storage not found")))
+                Err(ActionTimerError::InternalError(String::from(
+                    "Metrics storage not found",
+                )))
             }
         })
     }
@@ -134,7 +147,7 @@ impl Handler<StopActionTimer> for MetricsManagerActor {
 
 pub struct ActionMetricsFamilySnapshot {
     pub key: StorageKey,
-    pub metrics: Vec<MetricsFamilySnapshot>
+    pub metrics: Vec<MetricsFamilySnapshot>,
 }
 
 #[derive(Message)]
@@ -145,12 +158,15 @@ impl Handler<FetchActionMetrics> for MetricsManagerActor {
     type Result = ResponseFuture<Vec<ActionMetricsFamilySnapshot>>;
 
     fn handle(&mut self, _msg: FetchActionMetrics, _ctx: &mut Self::Context) -> Self::Result {
-        let fut_metrics = self.storages.iter()
+        let fut_metrics = self
+            .storages
+            .iter()
             .map(|(key, storage)| {
                 let key = key.clone();
                 let fut = storage.addr.send(FetchMetrics);
                 fut.map(|f| (key, f))
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
         Box::pin(async move {
             join_all(fut_metrics)
                 .await

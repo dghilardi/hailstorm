@@ -17,15 +17,12 @@ impl Timer {
     pub fn empty(id: u32) -> Self {
         Self {
             id,
-            execution_info: None
+            execution_info: None,
         }
     }
 
     pub fn set_execution(&mut self, elapsed: Duration, outcome: i64) {
-        self.execution_info = Some(ExecutionInfo {
-            elapsed,
-            outcome
-        })
+        self.execution_info = Some(ExecutionInfo { elapsed, outcome })
     }
 
     pub fn get_execution(&self) -> Option<ExecutionInfo> {
@@ -35,4 +32,3 @@ impl Timer {
         self.id
     }
 }
-

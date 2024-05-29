@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use dashmap::DashMap;
-use crate::simulation::rune::extension::storage::initializer::StorageInitializerRegistry;
 use crate::simulation::rune::extension::storage::bot_storage::BotStorage;
+use crate::simulation::rune::extension::storage::initializer::StorageInitializerRegistry;
+use dashmap::DashMap;
+use std::sync::Arc;
 
 #[derive(Default)]
 pub struct KeyValueStorage {
@@ -26,15 +26,22 @@ pub struct StorageSlice {
 
 impl StorageSlice {
     pub fn read(&self, key: &str) -> Option<String> {
-        self.storage
-            .get(&self.bot_id)
-            .and_then(|bot_data| bot_data.storages.get(&self.name).and_then(|storage| storage.values.get(key).map(|v| v.clone())))
+        self.storage.get(&self.bot_id).and_then(|bot_data| {
+            bot_data
+                .storages
+                .get(&self.name)
+                .and_then(|storage| storage.values.get(key).map(|v| v.clone()))
+        })
     }
 
     pub fn write(&mut self, key: String, value: String) {
         self.storage
-            .entry(self.bot_id).or_insert_with(Default::default).storages
-            .entry(self.name.clone()).or_insert_with(Default::default).values
+            .entry(self.bot_id)
+            .or_insert_with(Default::default)
+            .storages
+            .entry(self.name.clone())
+            .or_insert_with(Default::default)
+            .values
             .insert(key, value);
     }
 }
@@ -54,7 +61,7 @@ impl StorageRegistry {
                 bot_id,
                 name: name.to_string(),
                 storage: self.storage.clone(),
-            }
+            },
         )
     }
 }

@@ -1,12 +1,15 @@
-use std::time::Duration;
-use actix::{Actor, ActorContext, Addr, AsyncContext, AtomicResponse, Context, Handler, Message, WrapFuture, ActorFutureExt, Recipient, ResponseActFuture};
-use rand::{Rng, thread_rng};
-use rune::Hash;
-use thiserror::Error;
-use crate::simulation::rune::types::value::OwnedValue;
 use crate::simulation::actor::simulation::BotStateChange;
 use crate::simulation::bot::scripted::ScriptedBot;
+use crate::simulation::rune::types::value::OwnedValue;
 use crate::utils::actix::weak_context::WeakContext;
+use actix::{
+    Actor, ActorContext, ActorFutureExt, Addr, AsyncContext, AtomicResponse, Context, Handler,
+    Message, Recipient, ResponseActFuture, WrapFuture,
+};
+use rand::{thread_rng, Rng};
+use rune::Hash;
+use std::time::Duration;
+use thiserror::Error;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub enum BotState {
@@ -38,13 +41,9 @@ pub struct BotActor {
 }
 
 impl BotActor {
-    pub fn new<A>(
-        bot_id: u64,
-        simulation_addr: Addr<A>,
-        bot: ScriptedBot,
-    ) -> Self
-        where A: Actor<Context=Context<A>>
-        + Handler<BotStateChange>
+    pub fn new<A>(bot_id: u64, simulation_addr: Addr<A>, bot: ScriptedBot) -> Self
+    where
+        A: Actor<Context = Context<A>> + Handler<BotStateChange>,
     {
         Self {
             bot_id,
@@ -60,7 +59,8 @@ impl Actor for BotActor {
     fn started(&mut self, ctx: &mut Self::Context) {
         log::debug!("Bot actor started");
         let interval = self.bot.as_ref().expect("bot not defined").get_interval();
-        let random_delay = Duration::from_millis(thread_rng().gen_range(0..interval.as_millis() as u64));
+        let random_delay =
+            Duration::from_millis(thread_rng().gen_range(0..interval.as_millis() as u64));
         ctx.run_later(random_delay, move |_a, ctx| {
             ctx.run_interval_weak(interval, |addr| async move {
                 match addr.send(DoAction).await {
@@ -74,10 +74,12 @@ impl Actor for BotActor {
 
     fn stopped(&mut self, _ctx: &mut Self::Context) {
         log::debug!("Bot actor stopped");
-        self.state_change_recipient.try_send(BotStateChange {
-            bot_id: self.bot_id,
-            state: BotState::Stopped,
-        }).unwrap_or_else(|e| log::error!("Error sending stopped bot state - {e}"));
+        self.state_change_recipient
+            .try_send(BotStateChange {
+                bot_id: self.bot_id,
+                state: BotState::Stopped,
+            })
+            .unwrap_or_else(|e| log::error!("Error sending stopped bot state - {e}"));
     }
 }
 
@@ -89,8 +91,11 @@ impl Handler<StopBot> for BotActor {
     type Result = ResponseActFuture<Self, ()>;
 
     fn handle(&mut self, _msg: StopBot, ctx: &mut Self::Context) -> Self::Result {
-        let act_fut = ctx.address()
-            .send(TriggerHook { state: BotState::Stopping })
+        let act_fut = ctx
+            .address()
+            .send(TriggerHook {
+                state: BotState::Stopping,
+            })
             .into_actor(self)
             .map(|res, _act, ctx| {
                 match res {
@@ -123,23 +128,25 @@ impl Handler<DoAction> for BotActor {
 
     fn handle(&mut self, _msg: DoAction, _ctx: &mut Self::Context) -> Self::Result {
         if let Some(mut bot) = self.bot.take() {
-            AtomicResponse::new(Box::pin(async {
-                let res = bot.run_random_action().await;
-                (bot, res)
-            }
+            AtomicResponse::new(Box::pin(
+                async {
+                    let res = bot.run_random_action().await;
+                    (bot, res)
+                }
                 .into_actor(self)
                 .map(|(u, res), a, _c| {
                     a.bot = Some(u);
                     res.map_err(|e| ActionExecutionError::RuneError(e.to_string()))
-                })
+                }),
             ))
         } else {
             log::warn!("Bot is occupied");
-            AtomicResponse::new(Box::pin(futures::future::err(ActionExecutionError::OccupiedBot).into_actor(self)))
+            AtomicResponse::new(Box::pin(
+                futures::future::err(ActionExecutionError::OccupiedBot).into_actor(self),
+            ))
         }
     }
 }
-
 
 #[derive(Message)]
 #[rtype(result = "Result<(), ActionExecutionError>")]
@@ -150,21 +157,28 @@ pub struct TriggerHook {
 impl Handler<TriggerHook> for BotActor {
     type Result = AtomicResponse<Self, Result<(), ActionExecutionError>>;
 
-    fn handle(&mut self, TriggerHook { state }: TriggerHook, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(
+        &mut self,
+        TriggerHook { state }: TriggerHook,
+        _ctx: &mut Self::Context,
+    ) -> Self::Result {
         if let Some(mut bot) = self.bot.take() {
-            AtomicResponse::new(Box::pin(async move {
-                let res = bot.trigger_hook(state).await;
-                (bot, res)
-            }
+            AtomicResponse::new(Box::pin(
+                async move {
+                    let res = bot.trigger_hook(state).await;
+                    (bot, res)
+                }
                 .into_actor(self)
                 .map(|(u, res), a, _c| {
                     a.bot = Some(u);
                     res.map_err(|e| ActionExecutionError::RuneError(e.to_string()))
-                })
+                }),
             ))
         } else {
             log::warn!("Bot is occupied");
-            AtomicResponse::new(Box::pin(futures::future::err(ActionExecutionError::OccupiedBot).into_actor(self)))
+            AtomicResponse::new(Box::pin(
+                futures::future::err(ActionExecutionError::OccupiedBot).into_actor(self),
+            ))
         }
     }
 }
@@ -181,19 +195,22 @@ impl Handler<ExecuteHandler> for BotActor {
 
     fn handle(&mut self, msg: ExecuteHandler, _ctx: &mut Self::Context) -> Self::Result {
         if let Some(mut bot) = self.bot.take() {
-            AtomicResponse::new(Box::pin(async move {
-                let out = bot.execute_handler(msg.id, msg.args).await;
-                (bot, out)
-            }
+            AtomicResponse::new(Box::pin(
+                async move {
+                    let out = bot.execute_handler(msg.id, msg.args).await;
+                    (bot, out)
+                }
                 .into_actor(self)
                 .map(|(u, out), a, _c| {
                     a.bot = Some(u);
                     out.map_err(|e| ActionExecutionError::RuneError(e.to_string()))
-                })
+                }),
             ))
         } else {
             log::warn!("Bot is occupied");
-            AtomicResponse::new(Box::pin(futures::future::err(ActionExecutionError::OccupiedBot).into_actor(self)))
+            AtomicResponse::new(Box::pin(
+                futures::future::err(ActionExecutionError::OccupiedBot).into_actor(self),
+            ))
         }
     }
 }
