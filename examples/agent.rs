@@ -26,10 +26,14 @@ pub struct SimulationConfig {
 
 impl From<SimulationConfig> for SimulationParams {
     fn from(cfg: SimulationConfig) -> Self {
-        Self {
-            max_running: cfg.running_max,
-            max_rate: cfg.rate_max,
+        let mut result = Self::default();
+        if let Some(max_running) = cfg.running_max {
+            result = result.max_running(max_running);
         }
+        if let Some(max_rate) = cfg.rate_max {
+            result = result.max_rate(max_rate);
+        }
+        result
     }
 }
 
@@ -51,12 +55,12 @@ async fn main() {
 
     log::info!("Starting Hailstorm Agent...");
 
-    AgentBuilder {
-        agent_id: config.agent_id.unwrap_or_else(|| thread_rng().next_u32()),
-        simulation_params: config.simulation.into(),
-        downstream: config.address.to_socket_addrs().unwrap().next().unwrap(),
-        upstream: config.upstream.unwrap_or_default(),
-        rune_context_builder: |_sim| {
+    AgentBuilder::default()
+        .agent_id(config.agent_id.unwrap_or_else(|| thread_rng().next_u32()))
+        .simulation_params(config.simulation.into())
+        .downstream(config.address.to_socket_addrs().unwrap().next().unwrap())
+        .upstream(config.upstream.unwrap_or_default())
+        .rune_context_builder(|_sim| {
             let mut ctx =
                 rune::Context::with_default_modules().expect("Error loading default rune modules");
             ctx.install(
@@ -75,10 +79,9 @@ async fn main() {
             .expect("Error loading env extension module");
 
             ctx
-        },
-    }
-    .launch_grpc()
-    .await;
+        })
+        .launch_grpc()
+        .await;
 }
 
 #[cfg(test)]

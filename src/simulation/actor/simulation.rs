@@ -24,9 +24,25 @@ pub struct SimulationActor {
     bots: HashMap<String, BotModel>,
 }
 
+#[derive(Default)]
 pub struct SimulationParams {
-    pub max_running: Option<usize>,
-    pub max_rate: Option<usize>,
+    max_running: Option<usize>,
+    max_rate: Option<usize>,
+}
+
+impl SimulationParams {
+    pub fn max_running(self, max_running: usize) -> Self {
+        Self {
+            max_running: Some(max_running),
+            ..self
+        }
+    }
+    pub fn max_rate(self, max_rate: usize) -> Self {
+        Self {
+            max_rate: Some(max_rate),
+            ..self
+        }
+    }
 }
 
 impl Actor for SimulationActor {
