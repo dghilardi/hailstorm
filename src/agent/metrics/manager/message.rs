@@ -5,17 +5,20 @@ use std::time::SystemTime;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+/// Error related to action timers
 pub enum ActionTimerError {
     #[error("Internal Error - {0}")]
     InternalError(String),
 }
 
 #[derive(Debug, Eq, Hash, PartialEq, Clone)]
+/// Metrics storage key
 pub struct StorageKey {
     pub(crate) model: String,
     pub(crate) action: String,
 }
 
+/// Started action timer identifier and data
 pub struct StartedActionTimer {
     pub(super) id: u32,
     pub(super) key: StorageKey,

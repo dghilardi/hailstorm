@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use tonic::transport::Server;
 
+/// Struct used to build an agent instance
 pub struct AgentBuilder<ContextBuilder, UpstreamCfg, DownstreamCfg> {
     agent_id: u32,
     simulation_params: SimulationParams,
@@ -34,6 +35,7 @@ impl<UpstreamCfg> Default for AgentBuilder<(), UpstreamCfg, ()> {
     }
 }
 
+/// Running agent data
 pub struct AgentRuntime<Upstream: UpstreamAgentActor> {
     server: Addr<GrpcServerActor>,
     clients: Vec<Addr<Upstream>>,
