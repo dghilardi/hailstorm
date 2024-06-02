@@ -1,50 +1,15 @@
-use actix::{Actor, Addr, Context, Handler, MailboxError, Message, ResponseFuture};
+use std::collections::HashMap;
+
+use actix::{Actor, Context, Handler, ResponseFuture};
 use futures::future::join_all;
 use futures::FutureExt;
-use std::collections::HashMap;
-use std::future::Future;
-use std::time::SystemTime;
 
-use crate::agent::metrics::storage_actor::{
-    FetchMetrics, MetricsFamilySnapshot, MetricsStorageActor, StartTimer, StartedTimer, StopTimer,
+use crate::agent::metrics::manager::message::{
+    ActionMetricsFamilySnapshot, ActionTimerError, FetchActionMetrics, StartActionTimer,
+    StartedActionTimer, StopActionTimer, StorageKey,
 };
-use crate::agent::metrics::timer::ExecutionInfo;
-use thiserror::Error;
-
-#[derive(Debug, Eq, Hash, PartialEq, Clone)]
-pub struct StorageKey {
-    pub model: String,
-    pub action: String,
-}
-
-pub struct MetricsStorage {
-    ts_last_received_metric: SystemTime,
-    addr: Addr<MetricsStorageActor>,
-}
-
-impl MetricsStorage {
-    pub fn start_timer(&mut self) -> impl Future<Output = Result<StartedTimer, MailboxError>> {
-        self.ts_last_received_metric = SystemTime::now();
-        self.addr.send(StartTimer)
-    }
-    pub fn stop_timer(
-        &mut self,
-        timer: StartedTimer,
-        execution: ExecutionInfo,
-    ) -> impl Future<Output = Result<(), MailboxError>> {
-        self.ts_last_received_metric = SystemTime::now();
-        self.addr.send(StopTimer { timer, execution })
-    }
-}
-
-impl Default for MetricsStorage {
-    fn default() -> Self {
-        Self {
-            ts_last_received_metric: SystemTime::now(),
-            addr: MetricsStorageActor::start_default(),
-        }
-    }
-}
+use crate::agent::metrics::storage::facade::MetricsStorage;
+use crate::agent::metrics::storage::message::{FetchMetrics, StartedTimer};
 
 #[derive(Default)]
 pub struct MetricsManagerActor {
@@ -63,34 +28,6 @@ impl Actor for MetricsManagerActor {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum ActionTimerError {
-    #[error("Internal Error - {0}")]
-    InternalError(String),
-}
-
-pub struct StartedActionTimer {
-    id: u32,
-    key: StorageKey,
-    timestamp: SystemTime,
-}
-
-impl From<StartedActionTimer> for StartedTimer {
-    fn from(t: StartedActionTimer) -> Self {
-        Self {
-            id: t.id,
-            timestamp: t.timestamp,
-        }
-    }
-}
-
-#[derive(Message)]
-#[rtype(result = "Result<StartedActionTimer, ActionTimerError>")]
-pub struct StartActionTimer {
-    pub model: String,
-    pub action: String,
-}
-
 impl Handler<StartActionTimer> for MetricsManagerActor {
     type Result = ResponseFuture<Result<StartedActionTimer, ActionTimerError>>;
 
@@ -99,10 +36,7 @@ impl Handler<StartActionTimer> for MetricsManagerActor {
             model: msg.model,
             action: msg.action,
         };
-        let metrics_storage = self
-            .storages
-            .entry(key.clone())
-            .or_insert_with(Default::default);
+        let metrics_storage = self.storages.entry(key.clone()).or_default();
         let out = metrics_storage.start_timer();
         Box::pin(async move {
             match out.await {
@@ -111,13 +45,6 @@ impl Handler<StartActionTimer> for MetricsManagerActor {
             }
         })
     }
-}
-
-#[derive(Message)]
-#[rtype(result = "Result<(), ActionTimerError>")]
-pub struct StopActionTimer {
-    pub timer: StartedActionTimer,
-    pub execution: ExecutionInfo,
 }
 
 impl Handler<StopActionTimer> for MetricsManagerActor {
@@ -144,15 +71,6 @@ impl Handler<StopActionTimer> for MetricsManagerActor {
         })
     }
 }
-
-pub struct ActionMetricsFamilySnapshot {
-    pub key: StorageKey,
-    pub metrics: Vec<MetricsFamilySnapshot>,
-}
-
-#[derive(Message)]
-#[rtype(result = "Vec<ActionMetricsFamilySnapshot>")]
-pub struct FetchActionMetrics;
 
 impl Handler<FetchActionMetrics> for MetricsManagerActor {
     type Result = ResponseFuture<Vec<ActionMetricsFamilySnapshot>>;

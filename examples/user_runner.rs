@@ -1,6 +1,6 @@
 use actix::{Actor, Context, Handler};
 use clap::Parser;
-use hailstorm::agent::metrics::manager_actor::MetricsManagerActor;
+use hailstorm::agent::metrics::manager::actor::MetricsManagerActor;
 use hailstorm::simulation::actor::bot::BotActor;
 use hailstorm::simulation::actor::simulation::BotStateChange;
 use hailstorm::simulation::bot::registry::BotRegistry;

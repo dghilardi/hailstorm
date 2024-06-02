@@ -1,5 +1,5 @@
 use crate::agent::actor::AgentCoreActor;
-use crate::agent::metrics::manager_actor::MetricsManagerActor;
+use crate::agent::metrics::manager::actor::MetricsManagerActor;
 use crate::communication::notifier_actor::UpdatesNotifierActor;
 use crate::communication::protobuf::grpc;
 use crate::communication::server::HailstormGrpcServer;
@@ -142,8 +142,8 @@ where
         core_addr: Addr<AgentCoreActor>,
     ) -> Result<Vec<Addr<Upstream>>, Upstream::InitializationError> {
         let clients = cfg
-            .into_iter()
-            .map(|(_k, conf)| Upstream::new(conf, core_addr.clone()))
+            .into_values()
+            .map(|conf| Upstream::new(conf, core_addr.clone()))
             .collect::<Result<Vec<Upstream>, _>>()?
             .into_iter()
             .map(Actor::start)
@@ -158,7 +158,7 @@ where
 {
     /// Build and start the agent using grpc as communication channel agent to agent and agent to controller
     pub async fn launch_grpc(self) {
-        let address = self.downstream.clone();
+        let address = self.downstream;
         let runtime = self.launch::<GrpcUpstreamAgentActor>();
 
         let hailstorm_server = HailstormGrpcServer::new(runtime.server.recipient());

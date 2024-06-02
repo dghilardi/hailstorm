@@ -1,29 +1,18 @@
-use super::timer::Timer;
-use crate::agent::metrics::timer::{ActionOutcome, ExecutionInfo};
-use actix::{Actor, Context, Handler, Message, MessageResult};
+use super::super::timer::Timer;
+use crate::agent::metrics::storage::message::{
+    FetchMetrics, MetricsFamily, MetricsFamilySnapshot, StartTimer, StartedTimer, StopTimer,
+};
+use actix::{Actor, Context, Handler, MessageResult};
 use lazy_static::lazy_static;
 use ringbuf::RingBuffer;
 use std::cmp::min;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::ops::{Add, Div};
 use std::time::{Duration, SystemTime};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-#[derive(Clone, Default)]
-pub struct Metrics {
-    pub histogram: [u64; 20],
-    pub sum: u64,
-}
-
-type MetricsFamily = HashMap<ActionOutcome, Metrics>;
-
-pub struct MetricsFamilySnapshot {
-    pub timestamp: SystemTime,
-    pub metrics: MetricsFamily,
-}
-
-pub struct MFSnapshotStorage {
+pub(super) struct MFSnapshotStorage {
     last_snapshot: Option<SystemTime>,
     buf_producer: ringbuf::Producer<MetricsFamilySnapshot>,
     buf_consumer: ringbuf::Consumer<MetricsFamilySnapshot>,
@@ -138,21 +127,12 @@ fn compute_bucket_idx(value: u64) -> usize {
         .unwrap_or(0)
 }
 
-pub struct StartedTimer {
-    pub id: u32,
-    pub timestamp: SystemTime,
-}
-
-#[derive(Message)]
-#[rtype(result = "StartedTimer")]
-pub struct StartTimer;
-
 impl Handler<StartTimer> for MetricsStorageActor {
     type Result = MessageResult<StartTimer>;
 
     fn handle(&mut self, _: StartTimer, _ctx: &mut Self::Context) -> Self::Result {
         let now = SystemTime::now();
-        let timers = self.pending.entry(now).or_insert_with(Vec::new);
+        let timers = self.pending.entry(now).or_default();
         let timer_id = timers.len() as u32;
         timers.push(Timer::empty(timer_id));
         MessageResult(StartedTimer {
@@ -160,13 +140,6 @@ impl Handler<StartTimer> for MetricsStorageActor {
             timestamp: now,
         })
     }
-}
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct StopTimer {
-    pub timer: StartedTimer,
-    pub execution: ExecutionInfo,
 }
 
 impl Handler<StopTimer> for MetricsStorageActor {
@@ -186,10 +159,6 @@ impl Handler<StopTimer> for MetricsStorageActor {
     }
 }
 
-#[derive(Message)]
-#[rtype(result = "Vec<MetricsFamilySnapshot>")]
-pub struct FetchMetrics;
-
 impl Handler<FetchMetrics> for MetricsStorageActor {
     type Result = MessageResult<FetchMetrics>;
 
@@ -204,7 +173,7 @@ impl Handler<FetchMetrics> for MetricsStorageActor {
 
 #[cfg(test)]
 mod test {
-    use crate::agent::metrics::storage_actor::compute_bucket_idx;
+    use crate::agent::metrics::storage::actor::compute_bucket_idx;
 
     #[test]
     fn test_compute_bucket_idx() {

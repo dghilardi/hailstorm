@@ -4,7 +4,8 @@ use actix::{Actor, Addr, Context, Handler, Recipient};
 use rune::runtime::{Function, VmError};
 use rune::Any;
 
-use crate::agent::metrics::manager_actor::{StartActionTimer, StartedActionTimer, StopActionTimer};
+use crate::agent::metrics::manager::message::StartedActionTimer;
+use crate::agent::metrics::manager::message::{StartActionTimer, StopActionTimer};
 use crate::agent::metrics::timer::{ActionOutcome, ExecutionInfo};
 use crate::simulation::rune::types::value::OwnedValue;
 
@@ -29,10 +30,7 @@ impl PerformanceRegistry {
 
     async fn start_timer(&self, action: &str) -> Result<StartedActionTimer, VmError> {
         self.start_timer_recipient
-            .send(StartActionTimer {
-                model: self.model.clone(),
-                action: action.to_string(),
-            })
+            .send(StartActionTimer::new(&self.model, action))
             .await
             .map_err(VmError::panic)?
             .map_err(VmError::panic)
@@ -45,10 +43,10 @@ impl PerformanceRegistry {
         outcome: ActionOutcome,
     ) -> Result<(), VmError> {
         self.stop_timer_recipient
-            .send(StopActionTimer {
+            .send(StopActionTimer::new(
                 timer,
-                execution: ExecutionInfo { elapsed, outcome },
-            })
+                ExecutionInfo { elapsed, outcome },
+            ))
             .await
             .map_err(VmError::panic)?
             .map_err(VmError::panic)

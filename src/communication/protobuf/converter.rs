@@ -1,4 +1,4 @@
-use crate::agent::metrics::manager_actor::ActionMetricsFamilySnapshot;
+use crate::agent::metrics::manager::message::ActionMetricsFamilySnapshot;
 use crate::communication::protobuf::grpc::{ClientGroupStates, ModelStateSnapshot};
 use crate::grpc::{PerformanceHistogram, PerformanceSnapshot};
 use crate::simulation::actor::simulation::ClientStats;

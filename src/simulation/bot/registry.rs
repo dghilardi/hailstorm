@@ -1,4 +1,4 @@
-use crate::agent::metrics::manager_actor::{StartActionTimer, StopActionTimer};
+use crate::agent::metrics::manager::message::{StartActionTimer, StopActionTimer};
 use crate::simulation::bot::error::{BotError, LoadScriptError};
 use crate::simulation::bot::model_factory::BotModelFactory;
 use crate::simulation::bot::params::BotParams;
@@ -166,7 +166,7 @@ impl BotRegistry {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::agent::metrics::manager_actor::MetricsManagerActor;
+    use crate::agent::metrics::manager::actor::MetricsManagerActor;
 
     #[actix::test]
     async fn test_new_registry_creation() {

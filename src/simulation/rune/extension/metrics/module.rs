@@ -1,4 +1,4 @@
-use crate::agent::metrics::manager_actor::{StartActionTimer, StopActionTimer};
+use crate::agent::metrics::manager::message::{StartActionTimer, StopActionTimer};
 use crate::simulation::rune::extension::metrics::performance::PerformanceRegistry;
 use actix::{Actor, Addr, Context, Handler};
 use rune::{ContextError, Module};

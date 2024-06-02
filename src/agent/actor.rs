@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
-use crate::agent::metrics::manager_actor::{
-    ActionMetricsFamilySnapshot, FetchActionMetrics, MetricsManagerActor,
-};
+use crate::agent::metrics::manager::actor::MetricsManagerActor;
+use crate::agent::metrics::manager::message::{ActionMetricsFamilySnapshot, FetchActionMetrics};
 use actix::dev::Request;
 use actix::{
     Actor, ActorFutureExt, ActorTryFutureExt, Addr, AsyncContext, Context, Handler, MailboxError,
