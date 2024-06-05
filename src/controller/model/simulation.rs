@@ -5,10 +5,28 @@ use crate::communication::protobuf::grpc::{
     AgentSimulationState, ClientDistribution, LoadSimCommand,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct BotDef {
-    pub model: String,
-    pub shape: String,
+    model: String,
+    shape: String,
+}
+
+impl BotDef {
+    /// Set model name for this bot definition
+    pub fn model(self, model: &str) -> Self {
+        Self {
+            model: String::from(model),
+            ..self
+        }
+    }
+
+    /// Set shape for this model definition
+    pub fn shape(self, shape: &str) -> Self {
+        Self {
+            shape: String::from(shape),
+            ..self
+        }
+    }
 }
 
 impl From<BotDef> for ClientDistribution {
@@ -20,10 +38,22 @@ impl From<BotDef> for ClientDistribution {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SimulationDef {
-    pub bots: Vec<BotDef>,
-    pub script: String,
+    pub(crate) bots: Vec<BotDef>,
+    pub(crate) script: String,
+}
+
+impl SimulationDef {
+    /// set bots for this simulation
+    pub fn bots(self, bots: Vec<BotDef>) -> Self {
+        Self { bots, ..self }
+    }
+
+    /// set script for this simulation
+    pub fn script(self, script: String) -> Self {
+        Self { script, ..self }
+    }
 }
 
 impl From<SimulationDef> for LoadSimCommand {

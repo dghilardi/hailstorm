@@ -1,7 +1,8 @@
 use crate::communication::protobuf::grpc;
 use crate::communication::server::HailstormGrpcServer;
 use crate::communication::server_actor::GrpcServerActor;
-use crate::controller::controller_actor::ControllerActor;
+use crate::controller::actor::ControllerActor;
+use crate::controller::client::downstream::DownstreamClient;
 use crate::MultiAgentUpdateMessage;
 use actix::{Actor, Addr, AsyncContext, Context, Handler};
 use std::net::SocketAddr;
@@ -48,7 +49,7 @@ where
         let grpc_server_ctx: Context<GrpcServerActor> = Context::new();
 
         let controller_actor = ControllerActor::new(
-            grpc_server_ctx.address().recipient(),
+            DownstreamClient::new(grpc_server_ctx.address().recipient()),
             self.metrics_storage.recipient(),
         );
         let grpc_server_actor = GrpcServerActor::new(controller_ctx.address().recipient());

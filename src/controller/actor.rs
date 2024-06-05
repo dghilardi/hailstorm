@@ -16,6 +16,8 @@ use crate::communication::protobuf::grpc::{
     AgentGroup, AgentUpdate, CommandItem, ControllerCommand, LaunchCommand, LoadSimCommand,
     MultiAgent, StopCommand,
 };
+use crate::controller::client::downstream::DownstreamClient;
+use crate::controller::message::{LoadSimulation, StartSimulation};
 use crate::controller::model::simulation::{SimulationDef, SimulationState};
 
 #[derive(Clone, Debug)]
@@ -25,7 +27,7 @@ struct AgentState {
 }
 
 pub struct ControllerActor {
-    command_sender: Recipient<ControllerCommandMessage>,
+    downstream: DownstreamClient,
     metrics_storage: Recipient<MultiAgentUpdateMessage>,
     agents_state: HashMap<u32, AgentState>,
     simulation: SimulationState,
@@ -33,11 +35,11 @@ pub struct ControllerActor {
 
 impl ControllerActor {
     pub fn new(
-        command_sender: Recipient<ControllerCommandMessage>,
+        downstream: DownstreamClient,
         metrics_storage: Recipient<MultiAgentUpdateMessage>,
     ) -> Self {
         Self {
-            command_sender,
+            downstream,
             metrics_storage,
             agents_state: Default::default(),
             simulation: SimulationState::Idle,
@@ -70,9 +72,12 @@ impl Handler<MultiAgentUpdateMessage> for ControllerActor {
             log::info!(
                 "Update agents count {pre_handle_agents_count} -> {post_handle_agents_count}"
             );
-            Some(self.send_broadcast(vec![Command::UpdateAgentsCount(
-                post_handle_agents_count as u32,
-            )]))
+            Some(
+                self.downstream
+                    .send_broadcast(vec![Command::UpdateAgentsCount(
+                        post_handle_agents_count as u32,
+                    )]),
+            )
         } else {
             None
         };
@@ -98,49 +103,9 @@ impl ControllerActor {
         self.agents_state.len()
     }
 
-    fn send_to_agent(
-        &mut self,
-        agent_id: u32,
-        commands: Vec<Command>,
-    ) -> RecipientRequest<ControllerCommandMessage> {
-        self.command_sender
-            .send(ControllerCommandMessage(ControllerCommand {
-                commands: commands
-                    .into_iter()
-                    .map(|cmd| CommandItem { command: Some(cmd) })
-                    .collect(),
-                target: Some(Target::AgentId(agent_id)),
-            }))
-    }
-
-    fn send_to_agents(
-        &mut self,
-        agent_ids: Vec<u32>,
-        commands: Vec<Command>,
-    ) -> RecipientRequest<ControllerCommandMessage> {
-        self.command_sender
-            .send(ControllerCommandMessage(ControllerCommand {
-                commands: commands
-                    .into_iter()
-                    .map(|cmd| CommandItem { command: Some(cmd) })
-                    .collect(),
-                target: Some(Target::Agents(MultiAgent { agent_ids })),
-            }))
-    }
-
-    fn send_broadcast(&self, commands: Vec<Command>) -> RecipientRequest<ControllerCommandMessage> {
-        self.command_sender
-            .send(ControllerCommandMessage(ControllerCommand {
-                commands: commands
-                    .into_iter()
-                    .map(|cmd| CommandItem { command: Some(cmd) })
-                    .collect(),
-                target: Some(Target::Group(AgentGroup::All.into())),
-            }))
-    }
-
     fn broadcast_simulation_state(&mut self) -> RecipientRequest<ControllerCommandMessage> {
-        self.send_broadcast(self.generate_simulation_state_commands())
+        self.downstream
+            .send_broadcast(self.generate_simulation_state_commands())
     }
 
     fn misaligned_agents(&self) -> HashMap<u32, AgentState> {
@@ -187,7 +152,10 @@ impl ControllerActor {
         let maybe_send_fut = if misaligned.is_empty() {
             None
         } else {
-            Some(self.send_to_agents(misaligned.keys().cloned().collect(), commands))
+            Some(
+                self.downstream
+                    .send_to_agents(misaligned.keys().cloned().collect(), commands),
+            )
         };
 
         async move {
@@ -232,10 +200,6 @@ impl ControllerActor {
     }
 }
 
-#[derive(actix::Message)]
-#[rtype(result = "()")]
-pub struct LoadSimulation(pub SimulationDef);
-
 impl Handler<LoadSimulation> for ControllerActor {
     type Result = AtomicResponse<Self, ()>;
 
@@ -258,10 +222,6 @@ impl Handler<LoadSimulation> for ControllerActor {
         ))
     }
 }
-
-#[derive(actix::Message)]
-#[rtype(result = "()")]
-pub struct StartSimulation(pub SystemTime);
 
 impl Handler<StartSimulation> for ControllerActor {
     type Result = AtomicResponse<Self, ()>;
@@ -297,4 +257,9 @@ impl Handler<StartSimulation> for ControllerActor {
                 }),
         ))
     }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
 }

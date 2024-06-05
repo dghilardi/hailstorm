@@ -1,3 +1,5 @@
+pub mod actor;
 pub mod builder;
-pub mod controller_actor;
+mod client;
+pub mod message;
 pub mod model;
