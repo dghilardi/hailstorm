@@ -2,6 +2,7 @@ use meval::Error;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+/// Simulation related error
 pub enum SimulationError {
     #[error("Bad Shape function - {0}")]
     BadShape(String),
