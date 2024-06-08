@@ -35,6 +35,7 @@ struct AggregatedBotStateMetric {
     count: usize,
 }
 
+/// Actor representing the core hailstorm instance
 pub struct AgentCoreActor {
     agent_id: u32,
     notifier_addr: Addr<UpdatesNotifierActor>,
@@ -45,7 +46,7 @@ pub struct AgentCoreActor {
 }
 
 impl AgentCoreActor {
-    pub fn new<ServerActor>(
+    pub(crate) fn new<ServerActor>(
         agent_id: u32,
         notifier_addr: Addr<UpdatesNotifierActor>,
         server_addr: Addr<ServerActor>,
@@ -208,7 +209,7 @@ impl Actor for AgentCoreActor {
 
 #[derive(actix::Message)]
 #[rtype(result = "()")]
-pub struct RegisterAgentClientMsg {
+pub(crate) struct RegisterAgentClientMsg {
     pub cmd_receiver: Receiver<ControllerCommand>,
     pub msg_sender: Recipient<SendAgentMessage>,
 }
@@ -228,8 +229,15 @@ impl Handler<RegisterAgentClientMsg> for AgentCoreActor {
 
 #[derive(actix::Message)]
 #[rtype(result = "()")]
+/// Command to control the core hailstorm instance
 pub struct ConnectedClientMessage {
-    pub message: ControllerCommand,
+    message: ControllerCommand,
+}
+
+impl ConnectedClientMessage {
+    pub fn new(message: ControllerCommand) -> Self {
+        Self { message }
+    }
 }
 
 impl From<&Command> for Option<SimulationCommand> {

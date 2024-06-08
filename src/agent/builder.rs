@@ -6,13 +6,34 @@ use crate::communication::server::HailstormGrpcServer;
 use crate::communication::server_actor::GrpcServerActor;
 use crate::communication::upstream::contract::UpstreamAgentActor;
 use crate::communication::upstream::grpc::GrpcUpstreamAgentActor;
-use crate::simulation::actor::simulation::{SimulationActor, SimulationParams};
+use crate::simulation::actor::simulation::SimulationActor;
 use crate::simulation::bot::registry::BotRegistry;
 use actix::{Actor, Addr, AsyncContext, Context};
 use rand::{thread_rng, RngCore};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tonic::transport::Server;
+
+#[derive(Default)]
+pub struct SimulationParams {
+    pub(crate) max_running: Option<usize>,
+    pub(crate) max_rate: Option<usize>,
+}
+
+impl SimulationParams {
+    pub fn max_running(self, max_running: usize) -> Self {
+        Self {
+            max_running: Some(max_running),
+            ..self
+        }
+    }
+    pub fn max_rate(self, max_rate: usize) -> Self {
+        Self {
+            max_rate: Some(max_rate),
+            ..self
+        }
+    }
+}
 
 /// Struct used to build an agent instance
 pub struct AgentBuilder<ContextBuilder, UpstreamCfg, DownstreamCfg> {
@@ -39,6 +60,13 @@ impl<UpstreamCfg> Default for AgentBuilder<(), UpstreamCfg, ()> {
 pub struct AgentRuntime<Upstream: UpstreamAgentActor> {
     server: Addr<GrpcServerActor>,
     clients: Vec<Addr<Upstream>>,
+}
+
+impl<Upstream: UpstreamAgentActor> AgentRuntime<Upstream> {
+    /// upstream clients reference
+    pub fn clients_ref(&self) -> &[Addr<Upstream>] {
+        &self.clients
+    }
 }
 
 impl<ContextBuilder, UpstreamCfg, DownstreamCfg>

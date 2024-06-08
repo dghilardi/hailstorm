@@ -50,9 +50,19 @@ impl SimulationDef {
         Self { bots, ..self }
     }
 
+    /// immutable bots reference
+    pub fn bots_ref(&self) -> &[BotDef] {
+        &self.bots
+    }
+
     /// set script for this simulation
     pub fn script(self, script: String) -> Self {
         Self { script, ..self }
+    }
+
+    /// immutable script reference
+    pub fn script_ref(&self) -> &str {
+        &self.script
     }
 }
 

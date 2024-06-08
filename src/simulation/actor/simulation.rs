@@ -1,19 +1,24 @@
-use crate::simulation::actor::bot::{ActionExecutionError, BotState, ExecuteHandler};
-use crate::simulation::bot::registry::BotRegistry;
-use crate::simulation::bot_model::BotModel;
-use crate::simulation::error::SimulationError;
-use crate::simulation::rune::types::value::OwnedValue;
-use crate::utils::actix::synchro_context::WeakContext;
-use actix::{
-    Actor, AsyncContext, Context, Handler, Message, MessageResponse, ResponseFuture, WrapFuture,
-};
-use futures::FutureExt;
 use std::cmp::{min, Ordering};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::ops::{Mul, Sub};
 use std::time::{Duration, SystemTime};
 
+use crate::agent::builder::SimulationParams;
+use actix::{
+    Actor, AsyncContext, Context, Handler, Message, MessageResponse, ResponseFuture, WrapFuture,
+};
+use futures::FutureExt;
+
+use crate::simulation::actor::bot::{ActionExecutionError, BotState, ExecuteHandler};
+use crate::simulation::bot::registry::BotRegistry;
+use crate::simulation::bot_model::BotModel;
+use crate::simulation::error::SimulationError;
+use crate::simulation::rune::types::value::OwnedValue;
+use crate::simulation::shape::parse_shape_fun;
+use crate::utils::actix::synchro_context::WeakContext;
+
+/// Actor representing a hailstorm simulation
 pub struct SimulationActor {
     agent_id: u32,
     simulation_params: SimulationParams,
@@ -22,27 +27,6 @@ pub struct SimulationActor {
     agents_count: u32,
     model_shapes: HashMap<String, Box<dyn Fn(f64) -> f64>>,
     bots: HashMap<String, BotModel>,
-}
-
-#[derive(Default)]
-pub struct SimulationParams {
-    max_running: Option<usize>,
-    max_rate: Option<usize>,
-}
-
-impl SimulationParams {
-    pub fn max_running(self, max_running: usize) -> Self {
-        Self {
-            max_running: Some(max_running),
-            ..self
-        }
-    }
-    pub fn max_rate(self, max_rate: usize) -> Self {
-        Self {
-            max_rate: Some(max_rate),
-            ..self
-        }
-    }
 }
 
 impl Actor for SimulationActor {
@@ -54,7 +38,7 @@ impl Actor for SimulationActor {
 }
 
 impl SimulationActor {
-    pub fn new(
+    pub(crate) fn new(
         agent_id: u32,
         simulation_params: SimulationParams,
         bot_registry: BotRegistry,
@@ -70,56 +54,8 @@ impl SimulationActor {
         }
     }
 
-    pub fn parse_shape_fun(fun: String) -> Result<impl Fn(f64) -> f64, meval::Error> {
-        let mut ctx = meval::Context::new(); // built-ins
-        ctx.func("rect", |x| {
-            if x.abs() > 0.5 {
-                0.0
-            } else if x.abs() == 0.5 {
-                0.5
-            } else {
-                1.0
-            }
-        })
-        .func("tri", |x| if x.abs() < 1.0 { 1.0 - x.abs() } else { 0.0 })
-        .func("step", |x| {
-            if x < 0.0 {
-                0.0
-            } else if x == 0.0 {
-                0.5
-            } else {
-                1.0
-            }
-        })
-        .func3("trapz", |x, b_low, b_sup| {
-            if x.abs() > b_low / 2.0 {
-                0.0
-            } else if x.abs() < b_sup / 2.0 {
-                1.0
-            } else {
-                (x.abs() * 2.0 - b_low) / (b_sup - b_low)
-            }
-        })
-        .func3("costrapz", |x, b_low, b_sup| {
-            if x.abs() > b_low / 2.0 {
-                0.0
-            } else if x.abs() < b_sup / 2.0 {
-                1.0
-            } else {
-                x.abs()
-                    .sub(b_sup / 2.0)
-                    .mul(PI / (b_low - b_sup))
-                    .cos()
-                    .powi(2)
-            }
-        });
-
-        let expr: meval::Expr = fun.parse()?;
-        expr.bind_with_context(ctx, "t")
-    }
-
-    pub fn register_model(&mut self, model: String, shape: String) -> Result<(), SimulationError> {
-        let shape_fun = Self::parse_shape_fun(shape)?;
+    fn register_model(&mut self, model: String, shape: String) -> Result<(), SimulationError> {
+        let shape_fun = parse_shape_fun(shape)?;
 
         self.model_shapes.insert(model, Box::new(shape_fun));
 
@@ -200,6 +136,7 @@ impl SimulationActor {
 
 #[derive(Message, Debug)]
 #[rtype(result = "()")]
+/// Notify that a specific bot changed its state
 pub struct BotStateChange {
     pub bot_id: u64,
     pub state: BotState,
@@ -238,7 +175,7 @@ impl Handler<BotStateChange> for SimulationActor {
     }
 }
 
-pub enum SimulationCommand {
+pub(crate) enum SimulationCommand {
     LoadSimulation {
         model_shapes: HashMap<String, String>,
         script: String,
@@ -254,9 +191,10 @@ pub enum SimulationCommand {
     },
 }
 
-#[derive(Message)]
+#[derive(Message, Default)]
 #[rtype(result = "()")]
-pub struct SimulationCommandLst {
+/// Control the simulation sending a list of command
+pub(crate) struct SimulationCommandLst {
     pub commands: Vec<SimulationCommand>,
 }
 
@@ -325,7 +263,7 @@ impl Handler<SimulationCommandLst> for SimulationActor {
     }
 }
 
-pub enum SimulationState {
+pub(crate) enum SimulationState {
     Idle,
     Ready,
     Waiting,
@@ -333,14 +271,14 @@ pub enum SimulationState {
     Stopping,
 }
 
-pub struct ClientStats {
+pub(crate) struct ClientStats {
     pub model: String,
     pub timestamp: SystemTime,
     pub count_by_state: HashMap<BotState, usize>,
 }
 
 #[derive(MessageResponse)]
-pub struct SimulationStats {
+pub(crate) struct SimulationStats {
     pub stats: Vec<ClientStats>,
     pub timestamp: SystemTime,
     pub state: SimulationState,
@@ -349,7 +287,7 @@ pub struct SimulationStats {
 
 #[derive(Message)]
 #[rtype(result = "SimulationStats")]
-pub struct FetchSimulationStats;
+pub(crate) struct FetchSimulationStats;
 
 impl Handler<FetchSimulationStats> for SimulationActor {
     type Result = SimulationStats;
@@ -386,9 +324,19 @@ impl Handler<FetchSimulationStats> for SimulationActor {
 
 #[derive(Message)]
 #[rtype(result = "Result<OwnedValue, ActionExecutionError>")]
+/// Invoke a handler with args on a specific bot
 pub struct InvokeHandler {
-    pub bot_id: u64,
-    pub execution_args: ExecuteHandler,
+    pub(crate) bot_id: u64,
+    pub(crate) execution_args: ExecuteHandler,
+}
+
+impl InvokeHandler {
+    pub fn new(bot_id: u64, args: ExecuteHandler) -> Self {
+        Self {
+            bot_id,
+            execution_args: args,
+        }
+    }
 }
 
 impl Handler<InvokeHandler> for SimulationActor {

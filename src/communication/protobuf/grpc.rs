@@ -3,7 +3,7 @@ use std::time::SystemTime;
 tonic::include_proto!("hailstorm");
 
 impl Target {
-    pub fn includes_agent(&self, agent_id: u32) -> bool {
+    pub(crate) fn includes_agent(&self, agent_id: u32) -> bool {
         match self {
             Target::Group(grp_id) => match AgentGroup::from_i32(*grp_id) {
                 Some(AgentGroup::All) => true,
@@ -18,6 +18,7 @@ impl Target {
 }
 
 impl AgentUpdate {
+    /// most recent stat timestamp
     pub fn last_ts(&self) -> Option<SystemTime> {
         self.stats
             .iter()
@@ -25,6 +26,7 @@ impl AgentUpdate {
             .max()
     }
 
+    /// agent update timestamp
     pub fn update_ts(&self) -> Option<SystemTime> {
         self.timestamp
             .clone()
@@ -36,6 +38,7 @@ impl AgentUpdate {
 }
 
 impl ModelStats {
+    /// most recent timestamp amongst all states and perf timestamps
     pub fn last_ts(&self) -> Option<SystemTime> {
         let max_states_ts = self
             .states

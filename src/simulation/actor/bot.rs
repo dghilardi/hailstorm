@@ -12,6 +12,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
+/// Bot lifecycle state
 pub enum BotState {
     Idle,
     Initializing,
@@ -34,6 +35,7 @@ impl From<BotState> for u32 {
     }
 }
 
+/// Actor representing a hailstorm bot
 pub struct BotActor {
     bot_id: u64,
     state_change_recipient: Recipient<BotStateChange>,
@@ -85,7 +87,7 @@ impl Actor for BotActor {
 
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct StopBot;
+pub(crate) struct StopBot;
 
 impl Handler<StopBot> for BotActor {
     type Result = ResponseActFuture<Self, ()>;
@@ -111,9 +113,10 @@ impl Handler<StopBot> for BotActor {
 
 #[derive(Message)]
 #[rtype(result = "Result<(), ActionExecutionError>")]
-pub struct DoAction;
+struct DoAction;
 
 #[derive(Error, Debug)]
+/// Error during bot action execution
 pub enum ActionExecutionError {
     #[error("Error during rune execution - {0}")]
     RuneError(String),
@@ -150,7 +153,7 @@ impl Handler<DoAction> for BotActor {
 
 #[derive(Message)]
 #[rtype(result = "Result<(), ActionExecutionError>")]
-pub struct TriggerHook {
+pub(crate) struct TriggerHook {
     pub state: BotState,
 }
 
@@ -185,9 +188,16 @@ impl Handler<TriggerHook> for BotActor {
 
 #[derive(Message)]
 #[rtype(result = "Result<OwnedValue, ActionExecutionError>")]
+/// Message to ask BotActor to execute a handler
 pub struct ExecuteHandler {
-    pub id: Hash,
-    pub args: OwnedValue,
+    pub(crate) id: Hash,
+    pub(crate) args: OwnedValue,
+}
+
+impl ExecuteHandler {
+    pub fn new(id: Hash, args: OwnedValue) -> Self {
+        Self { id, args }
+    }
 }
 
 impl Handler<ExecuteHandler> for BotActor {

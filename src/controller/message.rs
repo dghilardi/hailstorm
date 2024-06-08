@@ -11,6 +11,11 @@ impl LoadSimulation {
     pub fn new(def: SimulationDef) -> Self {
         Self(def)
     }
+
+    /// Extract simulation definition
+    pub fn extract_definition(self) -> SimulationDef {
+        self.0
+    }
 }
 
 #[derive(actix::Message)]
@@ -22,5 +27,10 @@ impl StartSimulation {
     /// Create a new StartSimulation message with specific starting time
     pub fn at(time: SystemTime) -> Self {
         Self(time)
+    }
+
+    /// Extract start time ts
+    pub fn extract_ts(&self) -> SystemTime {
+        self.0
     }
 }

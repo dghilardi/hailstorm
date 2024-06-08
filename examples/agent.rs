@@ -1,6 +1,5 @@
 use config::{Config, ConfigError, Environment, File};
-use hailstorm::agent::builder::AgentBuilder;
-use hailstorm::simulation::actor::simulation::SimulationParams;
+use hailstorm::agent::builder::{AgentBuilder, SimulationParams};
 use hailstorm::simulation::rune::extension;
 use hailstorm::simulation::rune::extension::env::EnvModuleConf;
 use hailstorm::simulation::rune::extension::storage::initializer::empty::EmptyInitializer;

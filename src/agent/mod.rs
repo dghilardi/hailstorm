@@ -1,4 +1,4 @@
-pub(crate) mod actor;
+pub mod actor;
 pub mod builder;
 pub mod metrics;
 pub(crate) mod spawn;

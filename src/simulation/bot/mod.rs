@@ -1,5 +1,5 @@
-pub mod error;
-pub mod model_factory;
-pub mod params;
+pub(crate) mod error;
+pub(crate) mod model_factory;
+pub(crate) mod params;
 pub mod registry;
-pub mod scripted;
+pub(crate) mod scripted;

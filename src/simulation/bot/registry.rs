@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug)]
+/// Hailstorm bot registry
 pub struct BotRegistry {
     bot_types: HashMap<String, BotBehaviour>,
     context: Context,
@@ -23,13 +24,14 @@ pub struct BotRegistry {
 }
 
 #[derive(Debug)]
-pub struct FunSignature {
+struct FunSignature {
     hash: Hash,
     path: ItemBuf,
     args: DebugArgs,
 }
 
 impl BotRegistry {
+    /// Create a new bot registry
     pub fn new<A>(mut context: Context, metrics_mgr_addr: Addr<A>) -> Result<Self, BotError>
     where
         A: Actor<Context = actix::Context<A>>
@@ -48,6 +50,7 @@ impl BotRegistry {
         })
     }
 
+    /// Load rune script
     pub fn load_script(&mut self, script: &str) -> Result<(), LoadScriptError> {
         let mut diagnostics = Diagnostics::new();
 
@@ -117,15 +120,17 @@ impl BotRegistry {
         Ok(())
     }
 
+    /// reset script
     pub fn reset_script(&mut self) {
         self.bot_types = Default::default();
         self.unit = Arc::new(Default::default());
     }
 
-    pub fn has_registered_models(&self) -> bool {
+    pub(crate) fn has_registered_models(&self) -> bool {
         !self.bot_types.is_empty()
     }
 
+    /// Build a bot from the loaded script with specific model and id
     pub fn build_bot(&self, compound_id: CompoundId<u32>, model: &str) -> Option<ScriptedBot> {
         self.bot_types.get(model).and_then(|b| {
             let mut vm = rune::Vm::new(self.runtime.clone(), self.unit.clone());
@@ -145,15 +150,15 @@ impl BotRegistry {
         })
     }
 
-    pub fn count_bot_models(&self) -> usize {
+    pub(crate) fn count_bot_models(&self) -> usize {
         self.bot_types.len()
     }
 
-    pub fn model_names(&self) -> Vec<&String> {
+    pub(crate) fn model_names(&self) -> Vec<&String> {
         self.bot_types.keys().collect()
     }
 
-    pub fn build_factory(&self, model: &str) -> Option<BotModelFactory> {
+    pub(crate) fn build_factory(&self, model: &str) -> Option<BotModelFactory> {
         self.bot_types.get(model).map(|b| BotModelFactory {
             model: model.to_string(),
             behaviour: b.clone(),
