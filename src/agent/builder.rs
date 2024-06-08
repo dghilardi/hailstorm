@@ -204,16 +204,11 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::agent::actor::AgentCoreActor;
-    use crate::agent::builder::AgentBuilder;
+    use super::*;
     use crate::communication::message::ControllerCommandMessage;
-    use crate::communication::upstream::contract::UpstreamAgentActor;
     use crate::grpc::ControllerCommand;
-    use crate::simulation::actor::simulation::SimulationParams;
-    use actix::{Actor, Addr, Context};
-    use std::net::{IpAddr, SocketAddr};
+    use std::net::IpAddr;
     use std::time::Duration;
-    use tokio::time::error::Elapsed;
 
     #[actix::test]
     async fn launch_agent() {

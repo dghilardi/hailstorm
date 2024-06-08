@@ -380,28 +380,4 @@ mod test {
             println!("{n} -> {sum}");
         }
     }
-
-    #[test]
-    fn test_trapz_parse() {
-        for f_name in [
-            "trapz(t,2,1)",
-            "costrapz(t,2,1)",
-            "tri(t)",
-            "rect(t)",
-            "step(t)",
-        ] {
-            let fun =
-                SimulationActor::parse_shape_fun(String::from(f_name)).expect("Error parsing fun");
-
-            let coord = (0..=512)
-                .into_iter()
-                .map(|x| {
-                    let y = 224.0 - fun(x as f64 / 256.0 - 1.0) * 192.0;
-                    format!("{},{:.2}", x, y)
-                })
-                .collect::<Vec<_>>()
-                .join(" ");
-            println!("{f_name}: {coord}");
-        }
-    }
 }
