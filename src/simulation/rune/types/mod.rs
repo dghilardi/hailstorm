@@ -1,3 +1,3 @@
-pub mod object;
+mod object;
 pub mod value;
-pub mod vec;
+mod vec;

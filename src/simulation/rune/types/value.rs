@@ -4,6 +4,7 @@ use rune::runtime::{Bytes, Shared, StaticString, UnitStruct, VmError};
 use rune::{FromValue, ToValue, Value};
 use std::sync::Arc;
 
+/// Owned version of rune `Value` type
 pub enum OwnedValue {
     /// The unit value.
     Unit,
