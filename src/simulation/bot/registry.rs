@@ -15,7 +15,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug)]
-/// Hailstorm bot registry
+/// Manages the registration and instantiation of bots within a simulation.
+///
+/// The `BotRegistry` is responsible for loading bot scripts written in Rune, registering the
+/// discovered bot behaviors, and providing factories for creating instances of these bots.
 pub struct BotRegistry {
     bot_types: HashMap<String, BotBehaviour>,
     context: Context,
@@ -31,7 +34,19 @@ struct FunSignature {
 }
 
 impl BotRegistry {
-    /// Create a new bot registry
+    /// Creates a new instance of `BotRegistry`.
+    ///
+    /// Initializes the Rune context and installs necessary modules for bot and metrics management.
+    ///
+    /// # Parameters
+    ///
+    /// - `context`: The Rune context to be used for script execution.
+    /// - `metrics_mgr_addr`: Address of the metrics manager actor for integrating metrics collection.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result<Self, BotError>`, which is `Ok` with the new `BotRegistry` instance or
+    /// an `Err` with a `BotError` if initialization fails.
     pub fn new<A>(mut context: Context, metrics_mgr_addr: Addr<A>) -> Result<Self, BotError>
     where
         A: Actor<Context = actix::Context<A>>
@@ -50,7 +65,16 @@ impl BotRegistry {
         })
     }
 
-    /// Load rune script
+    /// Loads and compiles a Rune script, registering bot behaviors defined within.
+    ///
+    /// # Parameters
+    ///
+    /// - `script`: The source code of the Rune script to load.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the script is successfully loaded and compiled, or an `Err` with
+    /// a `LoadScriptError` detailing any issues encountered during the process.
     pub fn load_script(&mut self, script: &str) -> Result<(), LoadScriptError> {
         let mut diagnostics = Diagnostics::new();
 
@@ -88,7 +112,7 @@ impl BotRegistry {
                 acc
             }).into_iter()
             .filter(|(k, v)| {
-                let has_new_constructor= v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("new".into())));
+                let has_new_constructor = v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("new".into())));
                 let has_register_bot_fn = v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("register_bot".into())));
                 let is_a_bot = has_new_constructor && has_register_bot_fn;
 
@@ -105,7 +129,7 @@ impl BotRegistry {
                     Ok(_) => {
                         log::debug!("Registering {k}");
                         Some((k, bot))
-                    },
+                    }
                     Err(err) => {
                         log::error!("Error: {err}");
                         None
@@ -120,7 +144,10 @@ impl BotRegistry {
         Ok(())
     }
 
-    /// reset script
+    /// Resets the script state of the registry.
+    ///
+    /// Clears any previously loaded scripts and registered bot types, effectively resetting
+    /// the registry to its initial state.
     pub fn reset_script(&mut self) {
         self.bot_types = Default::default();
         self.unit = Arc::new(Default::default());
@@ -130,7 +157,17 @@ impl BotRegistry {
         !self.bot_types.is_empty()
     }
 
-    /// Build a bot from the loaded script with specific model and id
+    /// Attempts to create a new bot instance based on the specified model and compound ID.
+    ///
+    /// # Parameters
+    ///
+    /// - `compound_id`: The unique identifier for the bot instance.
+    /// - `model`: The name of the bot model to instantiate.
+    ///
+    /// # Returns
+    ///
+    /// Returns an `Option<ScriptedBot>` which is `Some` with the new bot instance if successful,
+    /// or `None` if the model could not be instantiated.
     pub fn build_bot(&self, compound_id: CompoundId<u32>, model: &str) -> Option<ScriptedBot> {
         self.bot_types.get(model).and_then(|b| {
             let mut vm = rune::Vm::new(self.runtime.clone(), self.unit.clone());
@@ -150,14 +187,34 @@ impl BotRegistry {
         })
     }
 
+    /// Counts the number of bot models registered in the registry.
+    ///
+    /// # Returns
+    ///
+    /// Returns the count of registered bot models.
     pub(crate) fn count_bot_models(&self) -> usize {
         self.bot_types.len()
     }
 
+    /// Retrieves a list of the names of all registered bot models.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Vec<&String>` containing the names of all registered bot models.
     pub(crate) fn model_names(&self) -> Vec<&String> {
         self.bot_types.keys().collect()
     }
 
+    /// Creates a factory for producing bots of the specified model.
+    ///
+    /// # Parameters
+    ///
+    /// - `model`: The name of the bot model for which to create a factory.
+    ///
+    /// # Returns
+    ///
+    /// Returns an `Option<BotModelFactory>` which is `Some` with the new factory if the model exists,
+    /// or `None` if there is no such model registered.
     pub(crate) fn build_factory(&self, model: &str) -> Option<BotModelFactory> {
         self.bot_types.get(model).map(|b| BotModelFactory {
             model: model.to_string(),
@@ -172,6 +229,25 @@ impl BotRegistry {
 mod test {
     use super::*;
     use crate::agent::metrics::manager::actor::MetricsManagerActor;
+
+    const MINIMAL_VALID_SCRIPT: &str = r#"
+            struct Demo { id }
+            impl Demo {
+              pub fn register_bot(bot) {}
+              pub fn new(par) {
+                Self { id: 10 }
+              }
+            }
+    "#;
+    const MINIMAL_INVALID_SCRIPT: &str = r#"
+            struct Demo { id }
+            impl X {
+              pub fn register_bot(bot) {}
+              pub fn new(par) {
+                Self { id: 10 }
+              }
+            }
+    "#;
 
     #[actix::test]
     async fn test_new_registry_creation() {
@@ -211,5 +287,56 @@ mod test {
         let instance = vm.call(&["Demo", "new"], ()).unwrap();
         vm.call(bot.random_action(), (&instance,))
             .expect("Error running action");
+    }
+
+    #[actix::test]
+    async fn test_load_valid_script() {
+        let context = Context::with_default_modules().unwrap();
+        let metrics_addr = MetricsManagerActor::start_default();
+
+        let mut bot_registry = BotRegistry::new(context, metrics_addr).unwrap();
+
+        assert!(bot_registry.load_script(MINIMAL_VALID_SCRIPT).is_ok());
+    }
+
+    #[actix::test]
+    async fn test_load_invalid_script() {
+        let context = Context::with_default_modules().unwrap();
+        let metrics_addr = MetricsManagerActor::start_default();
+
+        let mut bot_registry = BotRegistry::new(context, metrics_addr).unwrap();
+
+        assert!(matches!(
+            bot_registry.load_script(MINIMAL_INVALID_SCRIPT),
+            Err(LoadScriptError::InvalidScript(_))
+        ));
+    }
+
+    #[actix::test]
+    async fn test_reset_script() {
+        let context = Context::with_default_modules().unwrap();
+        let metrics_addr = MetricsManagerActor::start_default();
+
+        let mut bot_registry = BotRegistry::new(context, metrics_addr).unwrap();
+
+        bot_registry.load_script(MINIMAL_VALID_SCRIPT).unwrap();
+        assert!(!bot_registry.bot_types.is_empty());
+
+        bot_registry.reset_script();
+        assert!(bot_registry.bot_types.is_empty());
+    }
+
+    #[actix::test]
+    async fn test_build_bot() {
+        let context = Context::with_default_modules().unwrap();
+        let metrics_addr = MetricsManagerActor::start_default();
+
+        let mut bot_registry = BotRegistry::new(context, metrics_addr).unwrap();
+
+        bot_registry.load_script(MINIMAL_VALID_SCRIPT).unwrap();
+        assert!(!bot_registry.bot_types.is_empty());
+
+        let bot = bot_registry.build_bot(CompoundId::new(1, 2, 3), "Demo");
+        assert!(bot.is_some());
     }
 }
