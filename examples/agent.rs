@@ -70,10 +70,8 @@ async fn main() {
             )
             .expect("Error loading storage extension module");
             ctx.install(
-                &extension::env::module(EnvModuleConf {
-                    prefix: Some(String::from("hsa")),
-                })
-                .expect("Error initializing env extension module"),
+                &extension::env::module(EnvModuleConf::default().with_prefix("hsa"))
+                    .expect("Error initializing env extension module"),
             )
             .expect("Error loading env extension module");
 
