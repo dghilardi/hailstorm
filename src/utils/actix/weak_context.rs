@@ -73,3 +73,63 @@ where
 }
 
 impl<A> WeakContext<A> for Context<A> where A: Actor<Context = Self> {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix::prelude::*;
+    use std::sync::{Arc, Mutex};
+    use tokio::time::sleep;
+
+    struct TestActor(Arc<Mutex<usize>>);
+
+    impl Actor for TestActor {
+        type Context = Context<Self>;
+
+        fn started(&mut self, ctx: &mut Self::Context) {
+            let counter_clone = self.0.clone();
+            ctx.run_interval_weak(Duration::from_millis(100), move |_addr: Addr<TestActor>| {
+                let counter_clone = counter_clone.clone();
+                async move {
+                    let mut counter = counter_clone.lock().unwrap();
+                    *counter += 1;
+                }
+            });
+        }
+    }
+
+    #[actix::test]
+    async fn test_periodic_task_runs() {
+        let counter = Arc::new(Mutex::new(0));
+        let actor = TestActor(counter.clone()).start();
+
+        // Wait to ensure the task has time to run a few times.
+        sleep(Duration::from_millis(350)).await;
+
+        assert!(
+            *counter.lock().unwrap() >= 3,
+            "Counter should have been incremented at least 3 times"
+        );
+    }
+
+    #[actix::test]
+    async fn test_periodic_task_stops_after_actor_dropped() {
+        let counter = Arc::new(Mutex::new(0));
+        let actor = TestActor(counter.clone()).start();
+
+        // Drop the actor
+        drop(actor);
+
+        // Wait to ensure if the task would run again if it wasn't stopped.
+        sleep(Duration::from_millis(350)).await;
+
+        let final_count = *counter.lock().unwrap();
+        sleep(Duration::from_millis(200)).await; // Wait more to check if the count changes
+
+        assert_eq!(
+            *counter.lock().unwrap(),
+            final_count,
+            "Counter should not have incremented after actor was dropped"
+        );
+    }
+}
