@@ -40,6 +40,7 @@ csv = "1.1.6"
 config = "0.13.1"
 env_logger = "0.9.0"
 clap = { version = "3.2.5", features = ["derive"] }
+tempfile = "3.10.1"
 
 [build-dependencies]
 tonic-build = "0.8.0"

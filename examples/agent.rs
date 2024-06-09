@@ -63,9 +63,9 @@ async fn main() {
             let mut ctx =
                 rune::Context::with_default_modules().expect("Error loading default rune modules");
             ctx.install(
-                &extension::storage::module(StorageModuleArgs {
-                    initializer: EmptyInitializer,
-                })
+                &extension::storage::module(
+                    StorageModuleArgs::default().with_initializer(EmptyInitializer),
+                )
                 .expect("Error initializing storage extension module"),
             )
             .expect("Error loading storage extension module");
