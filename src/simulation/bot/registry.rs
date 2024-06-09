@@ -231,9 +231,35 @@ mod test {
     use crate::agent::metrics::manager::actor::MetricsManagerActor;
 
     const MINIMAL_VALID_SCRIPT: &str = r#"
+            struct Util {}
             struct Demo { id }
+
             impl Demo {
               pub fn register_bot(bot) {}
+              pub fn new(par) {
+                Self { id: 10 }
+              }
+            }
+    "#;
+
+    const BOT_ERR_SCRIPT: &str = r#"
+            struct Util {}
+            struct Demo { id }
+
+            impl Demo {
+              pub fn register_bot(bot) {}
+              pub fn new(par) {
+                Self { id: 10 / 0 }
+              }
+            }
+    "#;
+
+    const BOT_REGISTER_ERR_SCRIPT: &str = r#"
+            struct Util {}
+            struct Demo { id }
+
+            impl Demo {
+              pub fn register_bot(bot) { 0 / 0 }
               pub fn new(par) {
                 Self { id: 10 }
               }
@@ -300,6 +326,17 @@ mod test {
     }
 
     #[actix::test]
+    async fn test_load_valid_script_with_bot_registration_error() {
+        let context = Context::with_default_modules().unwrap();
+        let metrics_addr = MetricsManagerActor::start_default();
+
+        let mut bot_registry = BotRegistry::new(context, metrics_addr).unwrap();
+        bot_registry.load_script(BOT_REGISTER_ERR_SCRIPT).unwrap();
+
+        assert_eq!(0, bot_registry.count_bot_models());
+    }
+
+    #[actix::test]
     async fn test_load_invalid_script() {
         let context = Context::with_default_modules().unwrap();
         let metrics_addr = MetricsManagerActor::start_default();
@@ -338,5 +375,63 @@ mod test {
 
         let bot = bot_registry.build_bot(CompoundId::new(1, 2, 3), "Demo");
         assert!(bot.is_some());
+    }
+
+    #[actix::test]
+    async fn test_build_bot_err() {
+        let context = Context::with_default_modules().unwrap();
+        let metrics_addr = MetricsManagerActor::start_default();
+
+        let mut bot_registry = BotRegistry::new(context, metrics_addr).unwrap();
+
+        bot_registry.load_script(BOT_ERR_SCRIPT).unwrap();
+        assert!(!bot_registry.bot_types.is_empty());
+
+        let bot = bot_registry.build_bot(CompoundId::new(1, 2, 3), "Demo");
+        assert!(bot.is_none());
+    }
+
+    #[actix::test]
+    async fn test_count_bot_models() {
+        let context = Context::with_default_modules().unwrap();
+        let metrics_addr = MetricsManagerActor::start_default();
+
+        let mut bot_registry = BotRegistry::new(context, metrics_addr).unwrap();
+
+        bot_registry.load_script(MINIMAL_VALID_SCRIPT).unwrap();
+        assert!(!bot_registry.bot_types.is_empty());
+
+        let count = bot_registry.count_bot_models();
+        assert_eq!(1, count);
+    }
+
+    #[actix::test]
+    async fn test_model_names() {
+        let context = Context::with_default_modules().unwrap();
+        let metrics_addr = MetricsManagerActor::start_default();
+
+        let mut bot_registry = BotRegistry::new(context, metrics_addr).unwrap();
+
+        bot_registry.load_script(MINIMAL_VALID_SCRIPT).unwrap();
+        assert!(!bot_registry.bot_types.is_empty());
+
+        let names = bot_registry.model_names();
+
+        assert_eq!(1, names.len());
+        assert_eq!(Some("Demo"), names.first().map(|n| n.as_str()))
+    }
+
+    #[actix::test]
+    async fn test_build_bot_factory() {
+        let context = Context::with_default_modules().unwrap();
+        let metrics_addr = MetricsManagerActor::start_default();
+
+        let mut bot_registry = BotRegistry::new(context, metrics_addr).unwrap();
+
+        bot_registry.load_script(MINIMAL_VALID_SCRIPT).unwrap();
+        assert!(!bot_registry.bot_types.is_empty());
+
+        let bot_factory = bot_registry.build_factory("Demo");
+        assert!(bot_factory.is_some());
     }
 }
