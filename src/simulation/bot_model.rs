@@ -9,12 +9,15 @@ use actix::dev::Request;
 use actix::{Actor, Addr, Context, Handler};
 use rune::Hash;
 use std::collections::HashMap;
+
+/// Represents a single bot instance in the simulation.
 pub struct SimulationBot {
     state: BotState,
     addr: Addr<BotActor>,
 }
 
 impl SimulationBot {
+    /// Stops the bot.
     pub fn stop_bot(&mut self) {
         let send_outcome = self.addr.try_send(StopBot);
         if let Err(err) = send_outcome {
@@ -24,24 +27,29 @@ impl SimulationBot {
         }
     }
 
+    /// Executes a handler on the bot.
     pub fn execute_handler(&self, id: Hash, args: OwnedValue) -> Request<BotActor, ExecuteHandler> {
         self.addr.send(ExecuteHandler { id, args })
     }
 
+    /// Returns the current state of the bot.
     pub fn state(&self) -> BotState {
         self.state
     }
 
+    /// Changes the state of the bot.
     pub fn change_state(&mut self, state: BotState) -> Request<BotActor, TriggerHook> {
         self.state = state;
         self.addr.send(TriggerHook { state })
     }
 
+    /// Checks if the bot is connected (i.e., the actor is running).
     pub fn is_connected(&self) -> bool {
         self.addr.connected()
     }
 }
 
+/// Manages a collection of bots for a specific model.
 pub struct BotModel {
     agent_id: u32,
     model_id: u32,
@@ -61,6 +69,7 @@ impl BotModel {
         }
     }
 
+    /// Spawns a new bot.
     pub fn spawn_bot<A>(&mut self, addr: Addr<A>)
     where
         A: Actor<Context = Context<A>> + Handler<BotStateChange>,
@@ -79,6 +88,7 @@ impl BotModel {
         );
     }
 
+    /// Counts the bots by their current state.
     pub fn count_by_state(&self) -> HashMap<BotState, usize> {
         let mut group_by_state = HashMap::new();
 
@@ -90,6 +100,7 @@ impl BotModel {
         group_by_state
     }
 
+    /// Counts the number of active bots (not stopping).
     pub fn count_active(&self) -> usize {
         self.bots
             .iter()
@@ -97,6 +108,7 @@ impl BotModel {
             .count()
     }
 
+    /// Retains only the bots that satisfy the condition.
     pub fn retain<F>(&mut self, mut condition: F)
     where
         F: FnMut(&u64, &SimulationBot) -> bool,
@@ -104,9 +116,13 @@ impl BotModel {
         self.bots.retain(|id, bot| {
             let outcome = condition(id, bot);
             if !outcome {
-                let compound_id = CompoundId::from_internal_id((), *id)
-                    .unwrap_or_else(|_| panic!("internal id {id:08x} is in unexpected format"));
-                self.id_generator.release_id(compound_id.bot_id());
+                match CompoundId::from_internal_id((), *id) {
+                     Ok(compound_id) => self.id_generator.release_id(compound_id.bot_id()),
+                     Err(err) => {
+                         log::error!("internal id {id:08x} is in unexpected format: {err}");
+                         // We can't release the ID if we can't parse it, but we still remove the bot.
+                     }
+                }
             }
             outcome
         })
@@ -116,17 +132,28 @@ impl BotModel {
         self.bots.values_mut()
     }
 
+    /// Checks if the bot with the given ID exists and belongs to this model.
     pub fn contains_id(&self, id: u64) -> bool {
-        let sub_ids =
-            Vec::<u32>::from_varint(&id.to_be_bytes()).expect("Error converting from varint");
-        sub_ids[0] == self.model_id && self.bots.contains_key(&id)
+        if let Ok(sub_ids) = Vec::<u32>::from_varint(&id.to_be_bytes()) {
+             if sub_ids.len() > 0 {
+                return sub_ids[0] == self.model_id && self.bots.contains_key(&id);
+             }
+        }
+        false
     }
 
+    /// Removes a bot by ID.
     pub fn remove_bot(&mut self, id: u64) {
-        self.bots.remove(&id);
-        let sub_ids =
-            Vec::<u32>::from_varint(&id.to_be_bytes()).expect("Error converting from varint");
-        self.id_generator.release_id(sub_ids[1]);
+        if self.bots.remove(&id).is_some() {
+            match Vec::<u32>::from_varint(&id.to_be_bytes()) {
+                Ok(sub_ids) if sub_ids.len() > 1 => {
+                    self.id_generator.release_id(sub_ids[1]);
+                },
+                _ => {
+                    log::error!("Error converting from varint for id {id}");
+                }
+            }
+        }
     }
 
     pub fn get_bot_mut(&mut self, id: u64) -> Option<&mut SimulationBot> {

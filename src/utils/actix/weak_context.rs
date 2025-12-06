@@ -77,7 +77,6 @@ impl<A> WeakContext<A> for Context<A> where A: Actor<Context = Self> {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix::prelude::*;
     use std::sync::{Arc, Mutex};
     use tokio::time::sleep;
 
@@ -101,7 +100,7 @@ mod tests {
     #[actix::test]
     async fn test_periodic_task_runs() {
         let counter = Arc::new(Mutex::new(0));
-        let actor = TestActor(counter.clone()).start();
+        let _actor = TestActor(counter.clone()).start();
 
         // Wait to ensure the task has time to run a few times.
         sleep(Duration::from_millis(350)).await;

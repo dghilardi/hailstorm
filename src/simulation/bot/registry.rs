@@ -27,6 +27,7 @@ pub struct BotRegistry {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct FunSignature {
     hash: Hash,
     path: ItemBuf,
@@ -192,6 +193,7 @@ impl BotRegistry {
     /// # Returns
     ///
     /// Returns the count of registered bot models.
+    #[allow(dead_code)]
     pub(crate) fn count_bot_models(&self) -> usize {
         self.bot_types.len()
     }

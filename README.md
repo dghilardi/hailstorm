@@ -3,9 +3,37 @@
 
 Hailstorm is a distributed load testing framework inspired by [Locust](https://locust.io).
 
+## Project Structure
+
+- `src/`: Source code
+- `examples/`: Example usage and binaries
+- `proto/`: Protocol buffer definitions
+- `site/`: Documentation site (or frontend)
+
+## Prerequisites
+
+- Rust (latest stable)
+- Protocol Buffers Compiler (`protoc`)
+
+## Building
+
+To build the project:
+
+```sh
+cargo build --release
+```
+
+## Running Tests
+
+To run the test suite:
+
+```sh
+cargo test
+```
+
 ## Example setup
 
-The following example shows how a simulation can be configured and launched using the provided example biaries.
+The following example shows how a simulation can be configured and launched using the provided example binaries.
 For more control over hailstorm and its features I suggest to use hailstorm as a dependency and create your own agent and controller components.
 
 ### Controller

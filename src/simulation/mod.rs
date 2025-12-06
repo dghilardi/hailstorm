@@ -1,5 +1,4 @@
 mod bot_model;
-pub(crate) mod facade;
 mod sequential_id_generator;
 
 pub mod actor;
