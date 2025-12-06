@@ -222,8 +222,8 @@ mod test {
             type InitializationError = std::io::Error;
 
             fn new(
-                cfg: Self::Config,
-                core_addr: Addr<AgentCoreActor>,
+                _cfg: Self::Config,
+                _core_addr: Addr<AgentCoreActor>,
             ) -> Result<Self, Self::InitializationError> {
                 Ok(Self)
             }
@@ -238,7 +238,7 @@ mod test {
             })
             .launch::<MockUpstream>();
 
-        let out = rt
+        let _out = rt
             .server
             .send(ControllerCommandMessage(ControllerCommand {
                 commands: vec![],

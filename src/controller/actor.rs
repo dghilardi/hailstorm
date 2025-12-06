@@ -11,14 +11,15 @@ use actix::{
 use crate::communication::message::{ControllerCommandMessage, MultiAgentUpdateMessage};
 use crate::communication::protobuf::grpc;
 use crate::communication::protobuf::grpc::command_item::Command;
-use crate::communication::protobuf::grpc::controller_command::Target;
 use crate::communication::protobuf::grpc::{
-    AgentGroup, AgentUpdate, CommandItem, ControllerCommand, LaunchCommand, LoadSimCommand,
-    MultiAgent, StopCommand,
+    AgentUpdate, LaunchCommand, LoadSimCommand, StopCommand,
 };
 use crate::controller::client::downstream::DownstreamClient;
 use crate::controller::message::{LoadSimulation, StartSimulation};
-use crate::controller::model::simulation::{SimulationDef, SimulationState};
+use crate::controller::model::simulation::SimulationState;
+
+/// Time before an agent is considered disconnected if no updates are received
+const AGENT_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Debug)]
 struct AgentState {
@@ -26,6 +27,13 @@ struct AgentState {
     state: grpc::AgentSimulationState,
 }
 
+/// Actor responsible for managing the state of the controller.
+///
+/// It handles:
+/// - Aggregating updates from agents.
+/// - Maintaining the state of connected agents.
+/// - Coordinating simulation state changes (Ready, Launched, Stopped).
+/// - Broadcasting commands to agents.
 pub struct ControllerActor {
     downstream: DownstreamClient,
     metrics_storage: Recipient<MultiAgentUpdateMessage>,
@@ -68,6 +76,7 @@ impl Handler<MultiAgentUpdateMessage> for ControllerActor {
 
         let post_handle_agents_count = self.count_agents();
 
+        // If the number of agents changed, we need to broadcast the new count
         let cmd_fut = if pre_handle_agents_count != post_handle_agents_count {
             log::info!(
                 "Update agents count {pre_handle_agents_count} -> {post_handle_agents_count}"
@@ -121,6 +130,7 @@ impl ControllerActor {
         updates: &[AgentUpdate],
     ) -> impl Future<Output = ()> {
         for update in updates {
+            // Validate timestamp
             if let Some(timestamp) = update
                 .timestamp
                 .clone()
@@ -137,18 +147,22 @@ impl ControllerActor {
                         state: update.state(),
                     });
 
+                // Update only if the new timestamp is more recent
                 if entry.timestamp < timestamp {
                     entry.timestamp = timestamp;
                     entry.state = update.state();
                 }
             }
         }
+
+        // Remove timed-out agents
         self.agents_state
-            .retain(|_id, state| state.timestamp.add(Duration::from_secs(60)) > SystemTime::now());
+            .retain(|_id, state| state.timestamp.add(AGENT_TIMEOUT) > SystemTime::now());
 
         let misaligned = self.misaligned_agents();
         let commands = self.generate_simulation_state_commands();
 
+        // Send commands to misaligned agents to bring them up to speed
         let maybe_send_fut = if misaligned.is_empty() {
             None
         } else {
@@ -169,34 +183,36 @@ impl ControllerActor {
 
     fn generate_simulation_state_commands(&self) -> Vec<Command> {
         let agents_count = self.count_agents();
+
+        let mut commands = vec![
+             Command::Stop(StopCommand { reset: true }),
+             Command::UpdateAgentsCount(agents_count as u32),
+        ];
+
         match &self.simulation {
-            SimulationState::Idle => vec![
-                Command::Stop(StopCommand { reset: true }),
-                Command::UpdateAgentsCount(agents_count as u32),
-            ],
-            SimulationState::Ready { simulation } => vec![
-                Command::Stop(StopCommand { reset: true }),
-                Command::UpdateAgentsCount(agents_count as u32),
-                Command::Load(LoadSimCommand {
+            SimulationState::Idle => {
+                // Default commands are sufficient
+            },
+            SimulationState::Ready { simulation } => {
+                commands.push(Command::Load(LoadSimCommand {
                     clients_evolution: simulation.bots.iter().cloned().map(Into::into).collect(),
                     script: simulation.script.clone(),
-                }),
-            ],
+                }));
+            },
             SimulationState::Launched {
                 start_ts,
                 simulation,
-            } => vec![
-                Command::Stop(StopCommand { reset: true }),
-                Command::UpdateAgentsCount(agents_count as u32),
-                Command::Load(LoadSimCommand {
+            } => {
+                 commands.push(Command::Load(LoadSimCommand {
                     clients_evolution: simulation.bots.iter().cloned().map(Into::into).collect(),
                     script: simulation.script.clone(),
-                }),
-                Command::Launch(LaunchCommand {
+                }));
+                commands.push(Command::Launch(LaunchCommand {
                     start_ts: Some((*start_ts).into()),
-                }),
-            ],
+                }));
+            },
         }
+        commands
     }
 }
 
@@ -257,9 +273,4 @@ impl Handler<StartSimulation> for ControllerActor {
                 }),
         ))
     }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
 }

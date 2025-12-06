@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
-use crate::agent::metrics::manager::actor::MetricsManagerActor;
-use crate::agent::metrics::manager::message::{ActionMetricsFamilySnapshot, FetchActionMetrics};
 use actix::dev::Request;
 use actix::{
     Actor, ActorFutureExt, ActorTryFutureExt, Addr, AsyncContext, Context, Handler, MailboxError,
@@ -14,6 +12,8 @@ use futures::{join, StreamExt};
 use rand::{thread_rng, Rng};
 use tokio::sync::mpsc::Receiver;
 
+use crate::agent::metrics::manager::actor::MetricsManagerActor;
+use crate::agent::metrics::manager::message::{ActionMetricsFamilySnapshot, FetchActionMetrics};
 use crate::communication::message::{ControllerCommandMessage, SendAgentMessage};
 use crate::communication::notifier_actor::{RegisterAgentUpdateSender, UpdatesNotifierActor};
 use crate::communication::protobuf::grpc;
@@ -28,6 +28,12 @@ use crate::simulation::actor::simulation::{
 use crate::utils::actix::synchro_context::WeakContext;
 use crate::MultiAgentUpdateMessage;
 
+/// Interval for sending metrics to the controller
+const METRICS_SEND_INTERVAL: Duration = Duration::from_secs(3);
+
+/// Time window to re-send metrics if they haven't changed, to ensure liveness
+const METRICS_RESEND_WINDOW: Duration = Duration::from_secs(25);
+
 struct AggregatedBotStateMetric {
     timestamp: SystemTime,
     model: String,
@@ -35,7 +41,12 @@ struct AggregatedBotStateMetric {
     count: usize,
 }
 
-/// Actor representing the core hailstorm instance
+/// Actor representing the core hailstorm instance.
+///
+/// This actor is responsible for:
+/// - Collecting metrics from the `MetricsManagerActor` and `SimulationActor`.
+/// - Sending aggregated metrics to the `UpdatesNotifierActor`.
+/// - Receiving commands from the controller and forwarding them to the `SimulationActor`.
 pub struct AgentCoreActor {
     agent_id: u32,
     notifier_addr: Addr<UpdatesNotifierActor>,
@@ -82,12 +93,13 @@ impl AgentCoreActor {
 
         let fut = async move {
             let (perf_res, state_res) = join!(fetch_perf_req, fetch_state_req);
-            { Ok((perf_res?, state_res?)) }.map_err(|err: MailboxError| {
-                log::error!("Error fetching stats - {err}");
-                err
-            })
+            Ok((perf_res?, state_res?))
         }
         .into_actor(self)
+        .map_err(|err: MailboxError, _, _| {
+            log::error!("Error fetching stats - {err}");
+            err
+        })
         .and_then(
             move |(in_perf, in_stats): (Vec<ActionMetricsFamilySnapshot>, SimulationStats),
                   act,
@@ -106,30 +118,30 @@ impl AgentCoreActor {
                     .map(|cs| (cs.model.clone(), ModelStateSnapshot::from(cs)))
                     .collect::<HashMap<_, _>>();
 
-                notifier_addr
-                    .try_send(MultiAgentUpdateMessage(vec![AgentUpdate {
-                        agent_id,
-                        stats: model_states
-                            .into_iter()
-                            .map(|(model, v)| ModelStats {
-                                states: vec![v],
-                                performance: in_perf
-                                    .iter()
-                                    .filter(|p| p.key.model.eq(&model))
-                                    .flat_map(|metr_fam| metr_fam.to_protobuf())
-                                    .collect(),
-                                model,
-                            })
-                            .collect(),
-                        update_id: thread_rng().gen(),
-                        timestamp: Some(SystemTime::now().into()),
-                        name: "".to_string(),
-                        state: state as i32,
-                        simulation_id: "".to_string(),
-                    }]))
-                    .unwrap_or_else(|err| {
-                        log::error!("Error sending agent stats to notifier actor {err}");
-                    });
+                let update_msg = MultiAgentUpdateMessage(vec![AgentUpdate {
+                    agent_id,
+                    stats: model_states
+                        .into_iter()
+                        .map(|(model, v)| ModelStats {
+                            states: vec![v],
+                            performance: in_perf
+                                .iter()
+                                .filter(|p| p.key.model.eq(&model))
+                                .flat_map(|metr_fam| metr_fam.to_protobuf())
+                                .collect(),
+                            model,
+                        })
+                        .collect(),
+                    update_id: thread_rng().gen(),
+                    timestamp: Some(SystemTime::now().into()),
+                    name: "".to_string(),
+                    state: state as i32,
+                    simulation_id: "".to_string(),
+                }]);
+
+                if let Err(err) = notifier_addr.try_send(update_msg) {
+                     log::error!("Error sending agent stats to notifier actor {err}");
+                }
 
                 ok(())
             },
@@ -151,6 +163,8 @@ impl AgentCoreActor {
         stats
             .into_iter()
             .map(|mut client| {
+                // Ensure all states present in last_sent_metrics are also present in the client stats
+                // with count 0 if they are missing.
                 self.last_sent_metrics
                     .iter()
                     .filter(|m| {
@@ -162,6 +176,7 @@ impl AgentCoreActor {
                         client.count_by_state.insert(m.state, 0);
                     });
 
+                // Filter out stats that haven't changed or aren't due for a resend
                 client.count_by_state = client
                     .count_by_state
                     .into_iter()
@@ -171,11 +186,11 @@ impl AgentCoreActor {
                             .iter_mut()
                             .find(|m| m.model.eq(&client.model) && m.state.eq(state))
                         {
-                            if *count != sent_metrics.count
-                                || (*count > 0
-                                    && sent_metrics.timestamp.add(Duration::from_secs(25))
-                                        < timestamp)
-                            {
+                            let changed = *count != sent_metrics.count;
+                            let resend_due = *count > 0
+                                && sent_metrics.timestamp.add(METRICS_RESEND_WINDOW) < timestamp;
+
+                            if changed || resend_due {
                                 sent_metrics.count = *count;
                                 sent_metrics.timestamp = timestamp;
                                 true
@@ -203,7 +218,7 @@ impl Actor for AgentCoreActor {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        ctx.run_interval_synchro(Duration::from_secs(3), |actor, ctx| actor.send_data(ctx));
+        ctx.run_interval_synchro(METRICS_SEND_INTERVAL, |actor, ctx| actor.send_data(ctx));
     }
 }
 
@@ -218,9 +233,9 @@ impl Handler<RegisterAgentClientMsg> for AgentCoreActor {
     type Result = ();
 
     fn handle(&mut self, msg: RegisterAgentClientMsg, ctx: &mut Self::Context) -> Self::Result {
-        self.notifier_addr
-            .try_send(RegisterAgentUpdateSender(msg.msg_sender))
-            .unwrap_or_else(|err| log::error!("Error registering agent update sender - {err:?}"));
+        if let Err(err) = self.notifier_addr.try_send(RegisterAgentUpdateSender(msg.msg_sender)) {
+            log::error!("Error registering agent update sender - {err:?}");
+        }
 
         let cmd_stream = tokio_stream::wrappers::ReceiverStream::new(msg.cmd_receiver);
         ctx.add_message_stream(cmd_stream.map(move |message| ConnectedClientMessage { message }));
@@ -293,12 +308,13 @@ impl Handler<ConnectedClientMessage> for AgentCoreActor {
         let agent_id = self.agent_id;
 
         Box::pin(async move {
-            if message
+            let should_process = message
                 .target
                 .as_ref()
                 .map(|t| t.includes_agent(agent_id))
-                .unwrap_or(true)
-            {
+                .unwrap_or(true);
+
+            if should_process {
                 let sim_cmd_out = sim_addr
                     .send(SimulationCommandLst {
                         commands: sim_commands,

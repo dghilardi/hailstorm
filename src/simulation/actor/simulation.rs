@@ -1,7 +1,5 @@
 use std::cmp::{min, Ordering};
 use std::collections::HashMap;
-use std::f64::consts::PI;
-use std::ops::{Mul, Sub};
 use std::time::{Duration, SystemTime};
 
 use crate::agent::builder::SimulationParams;
@@ -268,6 +266,7 @@ pub(crate) enum SimulationState {
     Ready,
     Waiting,
     Running,
+    #[allow(dead_code)]
     Stopping,
 }
 
@@ -282,6 +281,7 @@ pub(crate) struct SimulationStats {
     pub stats: Vec<ClientStats>,
     pub timestamp: SystemTime,
     pub state: SimulationState,
+    #[allow(dead_code)]
     pub simulation_id: String,
 }
 

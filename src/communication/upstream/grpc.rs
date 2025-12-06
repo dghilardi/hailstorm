@@ -21,6 +21,7 @@ use tonic::transport::Channel;
 use tonic::Streaming;
 
 struct UpstreamConnection {
+    #[allow(dead_code)]
     client: HailstormServiceClient<Channel>,
     upd_sender: Sender<AgentMessage>,
     cmd_sender: Sender<ControllerCommand>,
