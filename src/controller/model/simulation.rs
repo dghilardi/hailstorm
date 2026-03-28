@@ -5,9 +5,12 @@ use crate::communication::protobuf::grpc::{
     AgentSimulationState, ClientDistribution, LoadSimCommand,
 };
 
+/// Definition of a bot type within a simulation, pairing a model name with its load shape expression.
 #[derive(Clone, Default)]
 pub struct BotDef {
+    /// Name of the bot model (must match a struct in the Rune script).
     model: String,
+    /// Mathematical expression defining the desired bot count over time (e.g., `"1000 * sin(t/10)"`).
     shape: String,
 }
 
@@ -38,9 +41,12 @@ impl From<BotDef> for ClientDistribution {
     }
 }
 
+/// Complete definition of a simulation, including bot definitions and the Rune script source.
 #[derive(Clone, Default)]
 pub struct SimulationDef {
+    /// Bot types and their load shape expressions.
     pub(crate) bots: Vec<BotDef>,
+    /// Rune script source code defining bot behaviors.
     pub(crate) script: String,
 }
 
@@ -79,14 +85,21 @@ impl From<SimulationDef> for LoadSimCommand {
     }
 }
 
+/// State machine representing the controller's current simulation lifecycle phase.
 #[derive(Clone)]
 pub enum SimulationState {
+    /// No simulation is loaded.
     Idle,
+    /// A simulation definition is loaded and ready to be launched.
     Ready {
+        /// The loaded simulation definition.
         simulation: SimulationDef,
     },
+    /// The simulation has been launched and is running (or waiting to start).
     Launched {
+        /// The scheduled start timestamp.
         start_ts: SystemTime,
+        /// The active simulation definition.
         simulation: SimulationDef,
     },
 }

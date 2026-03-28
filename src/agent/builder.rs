@@ -14,19 +14,26 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use tonic::transport::Server;
 
+/// Parameters that control how an agent runs its simulations.
+///
+/// These values act as throttles on the number of concurrent bots and their spawn rate.
 #[derive(Default)]
 pub struct SimulationParams {
+    /// Maximum number of bots that can be in the `Running` state simultaneously.
     pub(crate) max_running: Option<usize>,
+    /// Maximum number of bots that can be spawned per tick cycle.
     pub(crate) max_rate: Option<usize>,
 }
 
 impl SimulationParams {
+    /// Set the maximum number of concurrently running bots.
     pub fn max_running(self, max_running: usize) -> Self {
         Self {
             max_running: Some(max_running),
             ..self
         }
     }
+    /// Set the maximum number of bots that can be spawned per tick cycle.
     pub fn max_rate(self, max_rate: usize) -> Self {
         Self {
             max_rate: Some(max_rate),
@@ -56,14 +63,14 @@ impl<UpstreamCfg> Default for AgentBuilder<(), UpstreamCfg, ()> {
     }
 }
 
-/// Running agent data
+/// Handle to a running agent, providing access to its server and upstream client addresses.
 pub struct AgentRuntime<Upstream: UpstreamAgentActor> {
     server: Addr<GrpcServerActor>,
     clients: Vec<Addr<Upstream>>,
 }
 
 impl<Upstream: UpstreamAgentActor> AgentRuntime<Upstream> {
-    /// upstream clients reference
+    /// Returns a reference to the upstream client actor addresses.
     pub fn clients_ref(&self) -> &[Addr<Upstream>] {
         &self.clients
     }
@@ -264,7 +271,7 @@ mod test {
             })
             .launch_grpc();
 
-        // TODO: find a batter way to test grpc server
+        // TODO: find a better way to test grpc server
         match tokio::time::timeout(Duration::from_secs(10), serve_fut).await {
             Ok(()) => log::warn!("grpc server completed in less tha 10s"),
             Err(_elapsed) => log::debug!("grpc server started"),

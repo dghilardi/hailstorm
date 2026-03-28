@@ -5,8 +5,14 @@ use actix::{Addr, System};
 use std::thread;
 use std::thread::JoinHandle;
 
+/// Handle returned when an agent is spawned in a separate thread.
+///
+/// Holds both the thread join handle and the agent runtime, allowing the caller
+/// to communicate with the running agent and to await its termination.
 pub struct AgentHandle<Upstream: UpstreamAgentActor> {
+    /// Join handle for the thread running the agent's actix system.
     pub handle: JoinHandle<()>,
+    /// The agent runtime providing access to actor addresses.
     pub runtime: AgentRuntime<Upstream>,
 }
 

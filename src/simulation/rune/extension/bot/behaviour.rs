@@ -5,6 +5,10 @@ use rune::{Any, Hash};
 use std::collections::HashMap;
 use std::time::Duration;
 
+/// Describes a bot's behavior: its periodic actions, state hooks, and tick interval.
+///
+/// Populated by the `register_bot` function in a Rune script. Actions are selected
+/// randomly based on their weights; hooks fire when the bot enters a specific state.
 #[derive(Clone, Debug, Any)]
 pub struct BotBehaviour {
     total_weight: f64,
@@ -13,9 +17,12 @@ pub struct BotBehaviour {
     hooks: HashMap<BotState, Hash>,
 }
 
+/// Determines when a registered action should be triggered.
 #[derive(Clone, Debug, Any)]
 pub enum ActionTrigger {
+    /// Triggered periodically while the bot is alive, with the given weight for random selection.
     Alive { weight: f32 },
+    /// Triggered once when the bot enters the specified state.
     EnterState { state: BotState },
 }
 

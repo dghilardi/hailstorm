@@ -11,6 +11,10 @@ use crate::agent::metrics::manager::message::{
 use crate::agent::metrics::storage::facade::MetricsStorage;
 use crate::agent::metrics::storage::message::{FetchMetrics, StartedTimer};
 
+/// Actor that manages per-action metrics storage instances.
+///
+/// Routes start/stop timer messages to the appropriate [`MetricsStorage`] based on
+/// the (model, action) key, and aggregates metric snapshots for upstream reporting.
 #[derive(Default)]
 pub struct MetricsManagerActor {
     storages: HashMap<StorageKey, MetricsStorage>,

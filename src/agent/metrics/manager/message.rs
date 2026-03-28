@@ -11,10 +11,12 @@ pub enum ActionTimerError {
     InternalError(String),
 }
 
+/// Key identifying a metrics storage bucket by model name and action name.
 #[derive(Debug, Eq, Hash, PartialEq, Clone)]
-/// Metrics storage key
 pub struct StorageKey {
+    /// The bot model name.
     pub(crate) model: String,
+    /// The action name being measured.
     pub(crate) action: String,
 }
 
@@ -80,6 +82,7 @@ impl StopActionTimer {
     }
 }
 
+/// Snapshot of metrics for a single (model, action) pair, containing multiple time-windowed snapshots.
 pub(crate) struct ActionMetricsFamilySnapshot {
     pub key: StorageKey,
     pub metrics: Vec<MetricsFamilySnapshot>,

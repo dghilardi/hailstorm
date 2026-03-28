@@ -8,13 +8,21 @@ use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Code, Request, Response, Status, Streaming};
 
+/// Message sent when a new agent connects via gRPC, carrying its update stream
+/// and a channel for sending commands back to it.
 #[derive(actix::Message)]
 #[rtype(result = "()")]
 pub struct RegisterConnectedAgentMsg {
+    /// Incoming stream of agent update messages.
     pub states_stream: Streaming<AgentMessage>,
+    /// Channel for sending controller commands to this agent.
     pub cmd_sender: Sender<ControllerCommand>,
 }
 
+/// gRPC server implementing the [`HailstormService`] trait.
+///
+/// Delegates incoming agent connections to the [`GrpcServerActor`](super::server_actor::GrpcServerActor)
+/// via the [`RegisterConnectedAgentMsg`] message.
 pub struct HailstormGrpcServer {
     server_actor_addr: Recipient<RegisterConnectedAgentMsg>,
 }

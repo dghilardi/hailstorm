@@ -26,6 +26,10 @@ struct AgentState {
     state: grpc::AgentSimulationState,
 }
 
+/// Core controller actor that orchestrates distributed simulations.
+///
+/// Tracks connected agent states, distributes simulation commands, and ensures
+/// all agents converge to the desired simulation state (idle, ready, or launched).
 pub struct ControllerActor {
     downstream: DownstreamClient,
     metrics_storage: Recipient<MultiAgentUpdateMessage>,

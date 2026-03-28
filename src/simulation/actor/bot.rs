@@ -11,14 +11,23 @@ use rune::Hash;
 use std::time::Duration;
 use thiserror::Error;
 
+/// Lifecycle state of a bot instance.
+///
+/// Bots transition through these states as they are spawned, execute actions,
+/// and are eventually stopped. Custom states can be defined in Rune scripts.
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
-/// Bot lifecycle state
 pub enum BotState {
+    /// Bot is idle and not yet participating in the simulation.
     Idle,
+    /// Bot is initializing (running the enter-state hook).
     Initializing,
+    /// Bot is actively executing actions.
     Running,
+    /// Bot is shutting down (running the stopping hook).
     Stopping,
+    /// Bot has fully stopped and will be cleaned up.
     Stopped,
+    /// A user-defined custom state identified by a numeric ID.
     Custom(u32),
 }
 
@@ -115,8 +124,8 @@ impl Handler<StopBot> for BotActor {
 #[rtype(result = "Result<(), ActionExecutionError>")]
 struct DoAction;
 
+/// Error during bot action execution.
 #[derive(Error, Debug)]
-/// Error during bot action execution
 pub enum ActionExecutionError {
     #[error("Error during rune execution - {0}")]
     RuneError(String),

@@ -1,9 +1,10 @@
 use meval::Error;
 use thiserror::Error;
 
+/// Errors that can occur during simulation setup.
 #[derive(Debug, Error)]
-/// Simulation related error
 pub enum SimulationError {
+    /// The mathematical expression for a load shape function could not be parsed.
     #[error("Bad Shape function - {0}")]
     BadShape(String),
 }

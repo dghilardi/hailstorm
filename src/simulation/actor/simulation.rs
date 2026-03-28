@@ -175,17 +175,22 @@ impl Handler<BotStateChange> for SimulationActor {
     }
 }
 
+/// Commands that can be sent to the simulation actor to control its lifecycle.
 pub(crate) enum SimulationCommand {
+    /// Load a simulation with given model shapes and Rune script.
     LoadSimulation {
         model_shapes: HashMap<String, String>,
         script: String,
     },
+    /// Launch the loaded simulation at the specified start time.
     LaunchSimulation {
         start_ts: SystemTime,
     },
+    /// Update the total number of agents participating in the simulation.
     UpdateAgentsCount {
         count: u32,
     },
+    /// Stop the simulation, optionally resetting all state.
     StopSimulation {
         reset: bool,
     },

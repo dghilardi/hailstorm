@@ -1,15 +1,20 @@
 use std::time::Duration;
 
+/// Numeric identifier for an action's outcome (e.g., HTTP status code).
 pub type ActionOutcome = i64;
 
+/// A pending timer tracking a single action execution.
 pub struct Timer {
     id: u32,
     execution_info: Option<ExecutionInfo>,
 }
 
+/// Information collected upon completion of an action execution.
 #[derive(Clone)]
 pub struct ExecutionInfo {
+    /// How long the action took to complete.
     pub elapsed: Duration,
+    /// The outcome of the action (e.g., HTTP status code or custom status).
     pub outcome: ActionOutcome,
 }
 

@@ -1,12 +1,20 @@
 use std::cmp::max;
 use thiserror::Error;
 
+/// Encode a value into a variable-length byte sequence.
+///
+/// Each byte uses 7 bits for data and 1 bit (LSB) as a termination flag.
+/// A set LSB indicates the last byte of the encoded value.
 pub trait VarintEncode {
+    /// Encode `self` into a varint byte vector.
     fn to_varint(&self) -> Vec<u8>;
 }
 
+/// Decode a value from a variable-length byte sequence.
 pub trait VarintDecode: Sized {
+    /// Error type returned when decoding fails.
     type Error;
+    /// Decode a value from the given byte slice.
     fn from_varint(bytes: &[u8]) -> Result<Self, Self::Error>;
 }
 
