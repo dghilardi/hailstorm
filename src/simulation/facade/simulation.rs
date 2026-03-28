@@ -7,6 +7,7 @@ use actix::{Actor, Addr, Context, Handler, Recipient};
 ///
 /// Provides a convenient interface to change bot states and invoke handlers
 /// without needing direct access to the simulation actor's address.
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct SimulationFacade {
     user_state_change_tx: Recipient<BotStateChange>,
