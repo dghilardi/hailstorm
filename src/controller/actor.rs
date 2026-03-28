@@ -264,4 +264,43 @@ impl Handler<StartSimulation> for ControllerActor {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::communication::message::MultiAgentUpdateMessage;
+    use crate::communication::protobuf::grpc::AgentUpdate;
+    use crate::communication::server_actor::GrpcServerActor;
+    use actix::{Actor, Context, Handler};
+
+    struct MockMetricsStorage;
+    impl Actor for MockMetricsStorage {
+        type Context = Context<Self>;
+    }
+    impl Handler<MultiAgentUpdateMessage> for MockMetricsStorage {
+        type Result = ();
+        fn handle(&mut self, _msg: MultiAgentUpdateMessage, _ctx: &mut Self::Context) {}
+    }
+
+    #[actix::test]
+    async fn controller_tracks_new_agents() {
+        let metrics = MockMetricsStorage.start();
+        let grpc_server_ctx: Context<GrpcServerActor> = Context::new();
+        let grpc_server_actor = GrpcServerActor::new(metrics.clone().recipient());
+        let server_addr = grpc_server_ctx.run(grpc_server_actor);
+
+        let controller = ControllerActor::new(
+            DownstreamClient::new(server_addr.recipient()),
+            metrics.recipient(),
+        );
+        let controller_addr = controller.start();
+
+        let update = MultiAgentUpdateMessage(vec![AgentUpdate {
+            agent_id: 42,
+            stats: vec![],
+            update_id: 1,
+            timestamp: Some(SystemTime::now().into()),
+            name: String::new(),
+            state: grpc::AgentSimulationState::Idle as i32,
+            simulation_id: String::new(),
+        }]);
+
+        controller_addr.send(update).await.expect("send failed");
+    }
 }

@@ -105,6 +105,7 @@ pub enum SimulationState {
 }
 
 impl SimulationState {
+    /// Check whether an agent's reported simulation state is aligned with the controller's desired state.
     pub fn is_aligned(&self, agent_sim_state: &grpc::AgentSimulationState) -> bool {
         match (self, agent_sim_state) {
             (
@@ -139,5 +140,100 @@ impl SimulationState {
                 | AgentSimulationState::Stopping,
             ) => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ops::Add;
+    use std::time::Duration;
+
+    fn make_launched_future() -> SimulationState {
+        SimulationState::Launched {
+            start_ts: SystemTime::now().add(Duration::from_secs(3600)),
+            simulation: SimulationDef::default(),
+        }
+    }
+
+    fn make_launched_past() -> SimulationState {
+        SimulationState::Launched {
+            start_ts: SystemTime::now() - Duration::from_secs(3600),
+            simulation: SimulationDef::default(),
+        }
+    }
+
+    #[test]
+    fn idle_aligned_with_idle() {
+        assert!(SimulationState::Idle.is_aligned(&AgentSimulationState::Idle));
+    }
+
+    #[test]
+    fn idle_aligned_with_stopping() {
+        assert!(SimulationState::Idle.is_aligned(&AgentSimulationState::Stopping));
+    }
+
+    #[test]
+    fn idle_not_aligned_with_running() {
+        assert!(!SimulationState::Idle.is_aligned(&AgentSimulationState::Running));
+    }
+
+    #[test]
+    fn idle_not_aligned_with_ready() {
+        assert!(!SimulationState::Idle.is_aligned(&AgentSimulationState::Ready));
+    }
+
+    #[test]
+    fn ready_aligned_with_ready() {
+        let state = SimulationState::Ready {
+            simulation: SimulationDef::default(),
+        };
+        assert!(state.is_aligned(&AgentSimulationState::Ready));
+    }
+
+    #[test]
+    fn ready_not_aligned_with_idle() {
+        let state = SimulationState::Ready {
+            simulation: SimulationDef::default(),
+        };
+        assert!(!state.is_aligned(&AgentSimulationState::Idle));
+    }
+
+    #[test]
+    fn launched_aligned_with_running() {
+        assert!(make_launched_past().is_aligned(&AgentSimulationState::Running));
+    }
+
+    #[test]
+    fn launched_future_aligned_with_waiting() {
+        assert!(make_launched_future().is_aligned(&AgentSimulationState::Waiting));
+    }
+
+    #[test]
+    fn launched_past_not_aligned_with_waiting() {
+        assert!(!make_launched_past().is_aligned(&AgentSimulationState::Waiting));
+    }
+
+    #[test]
+    fn launched_not_aligned_with_idle() {
+        assert!(!make_launched_past().is_aligned(&AgentSimulationState::Idle));
+    }
+
+    #[test]
+    fn bot_def_builder() {
+        let def = BotDef::default()
+            .model("test_bot")
+            .shape("1000 * sin(t)");
+        assert_eq!(def.model, "test_bot");
+        assert_eq!(def.shape, "1000 * sin(t)");
+    }
+
+    #[test]
+    fn simulation_def_builder() {
+        let def = SimulationDef::default()
+            .bots(vec![BotDef::default().model("bot1")])
+            .script("test script".into());
+        assert_eq!(def.bots_ref().len(), 1);
+        assert_eq!(def.script_ref(), "test script");
     }
 }

@@ -108,23 +108,66 @@ impl<I: VarintDecode> VarintDecode for Vec<I> {
 
 #[cfg(test)]
 mod test {
-    use crate::utils::varint::{VarintDecode, VarintEncode};
+    use crate::utils::varint::{VarintDecode, VarintDecodeError, VarintEncode};
     use rand::{thread_rng, RngCore};
 
     #[test]
-    fn test_varint() {
-        let arg = 0;
-        let bytes = arg.to_varint();
-
-        assert_eq!(arg, u32::from_varint(&bytes).unwrap())
+    fn roundtrip_zero() {
+        let bytes = 0u32.to_varint();
+        assert_eq!(0u32, u32::from_varint(&bytes).unwrap());
     }
 
     #[test]
-    fn test_varint_vec() {
+    fn roundtrip_one() {
+        let bytes = 1u32.to_varint();
+        assert_eq!(1u32, u32::from_varint(&bytes).unwrap());
+    }
+
+    #[test]
+    fn roundtrip_max() {
+        let bytes = u32::MAX.to_varint();
+        assert_eq!(u32::MAX, u32::from_varint(&bytes).unwrap());
+    }
+
+    #[test]
+    fn roundtrip_random() {
+        for _ in 0..100 {
+            let value = thread_rng().next_u32();
+            let bytes = value.to_varint();
+            let decoded = u32::from_varint(&bytes).unwrap();
+            assert_eq!(value, decoded, "roundtrip failed for {value}");
+        }
+    }
+
+    #[test]
+    fn vec_roundtrip() {
         let arg = vec![0, thread_rng().next_u32(), u32::MAX];
         let bytes = arg.to_varint();
         let decoded = Vec::<u32>::from_varint(&bytes).unwrap();
+        assert_eq!(arg, decoded);
+    }
 
-        assert_eq!(arg, decoded)
+    #[test]
+    fn empty_vec_roundtrip() {
+        let arg: Vec<u32> = vec![];
+        let bytes = arg.to_varint();
+        let decoded = Vec::<u32>::from_varint(&bytes).unwrap();
+        assert_eq!(decoded.len(), 1); // decodes as single zero element
+    }
+
+    #[test]
+    fn overflow_returns_error() {
+        let too_long = vec![0u8; 6];
+        let result = u32::from_varint(&too_long);
+        assert!(matches!(result, Err(VarintDecodeError::Overflow { .. })));
+    }
+
+    #[test]
+    fn small_values_encode_compactly() {
+        // Small values should use fewer bytes
+        assert_eq!(0u32.to_varint().len(), 1);
+        assert_eq!(1u32.to_varint().len(), 1);
+        assert_eq!(63u32.to_varint().len(), 1); // 6 bits of data
+        assert_eq!(64u32.to_varint().len(), 2); // needs 7 bits
     }
 }

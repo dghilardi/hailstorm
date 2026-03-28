@@ -368,14 +368,32 @@ mod test {
     use crate::simulation::actor::simulation::SimulationActor;
 
     #[test]
-    fn test_shape_normalization() {
+    fn normalize_count_distributes_evenly() {
         let agents_count = 13;
         for n in 0..100 {
             let sum: usize = (0..agents_count)
-                .into_iter()
                 .map(|agent_id| SimulationActor::normalize_count(n as f64, agent_id, agents_count))
                 .sum();
-            println!("{n} -> {sum}");
+            // The sum across all agents should approximate the global count
+            assert!(
+                (sum as i64 - n as i64).unsigned_abs() <= agents_count as u64,
+                "n={n}, sum={sum}, agents={agents_count}: distribution too uneven"
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_count_single_agent() {
+        // With a single agent, it should get the full count
+        assert_eq!(SimulationActor::normalize_count(10.0, 0, 1), 10);
+        assert_eq!(SimulationActor::normalize_count(0.0, 0, 1), 0);
+    }
+
+    #[test]
+    fn normalize_count_zero_bots() {
+        // When global count is zero, no agent should get any bots
+        for agent_id in 0..5 {
+            assert_eq!(SimulationActor::normalize_count(0.0, agent_id, 5), 0);
         }
     }
 }
