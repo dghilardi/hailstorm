@@ -164,10 +164,11 @@ mod test {
 
     #[test]
     fn small_values_encode_compactly() {
-        // Small values should use fewer bytes
+        // Each byte carries 7 bits of data (LSB is termination flag).
+        // 1 byte = up to 7 data bits = values 0..127
         assert_eq!(0u32.to_varint().len(), 1);
         assert_eq!(1u32.to_varint().len(), 1);
-        assert_eq!(63u32.to_varint().len(), 1); // 6 bits of data
-        assert_eq!(64u32.to_varint().len(), 2); // needs 7 bits
+        assert_eq!(127u32.to_varint().len(), 1);
+        assert_eq!(128u32.to_varint().len(), 2); // needs >7 bits
     }
 }
