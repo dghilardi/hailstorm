@@ -11,7 +11,6 @@ use futures::future::{ok, ready};
 use futures::{StreamExt, TryFutureExt};
 use rand::{thread_rng, Rng};
 use std::cmp::min;
-use std::ops::Add;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -21,6 +20,8 @@ use tonic::transport::Channel;
 use tonic::Streaming;
 
 struct UpstreamConnection {
+    /// Kept alive to maintain the gRPC channel; used implicitly by the stream.
+    #[allow(dead_code)]
     client: HailstormServiceClient<Channel>,
     upd_sender: Sender<AgentMessage>,
     cmd_sender: Sender<ControllerCommand>,
@@ -182,11 +183,9 @@ impl Handler<EstablishConnection> for GrpcUpstreamAgentActor {
 }
 
 fn truncated_exponential_backoff(attempt_n: u32, max_backoff: Duration) -> Duration {
-    min(
-        Duration::from_secs(2_u32.pow(attempt_n) as u64)
-            .add(Duration::from_millis(thread_rng().gen_range(0..1000))),
-        max_backoff,
-    )
+    let base = 2u64.saturating_pow(attempt_n.min(30));
+    let jitter = Duration::from_millis(thread_rng().gen_range(0..1000));
+    min(Duration::from_secs(base).saturating_add(jitter), max_backoff)
 }
 
 impl Handler<SendAgentMessage> for GrpcUpstreamAgentActor {

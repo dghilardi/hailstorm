@@ -11,14 +11,12 @@ use actix::{
 use crate::communication::message::{ControllerCommandMessage, MultiAgentUpdateMessage};
 use crate::communication::protobuf::grpc;
 use crate::communication::protobuf::grpc::command_item::Command;
-use crate::communication::protobuf::grpc::controller_command::Target;
 use crate::communication::protobuf::grpc::{
-    AgentGroup, AgentUpdate, CommandItem, ControllerCommand, LaunchCommand, LoadSimCommand,
-    MultiAgent, StopCommand,
+    AgentUpdate, LaunchCommand, LoadSimCommand, StopCommand,
 };
 use crate::controller::client::downstream::DownstreamClient;
 use crate::controller::message::{LoadSimulation, StartSimulation};
-use crate::controller::model::simulation::{SimulationDef, SimulationState};
+use crate::controller::model::simulation::SimulationState;
 
 #[derive(Clone, Debug)]
 struct AgentState {

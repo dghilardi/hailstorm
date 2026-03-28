@@ -6,6 +6,10 @@ use rune::runtime::RuntimeContext;
 use rune::Unit;
 use std::sync::Arc;
 
+/// Factory for creating bot instances of a specific model.
+///
+/// Holds the shared Rune runtime and compiled unit so that each new bot
+/// gets its own VM instance but shares the compiled bytecode.
 pub struct BotModelFactory {
     pub model: String,
     pub behaviour: BotBehaviour,
@@ -14,16 +18,22 @@ pub struct BotModelFactory {
 }
 
 impl BotModelFactory {
-    pub fn new_bot(&self, compound_id: CompoundId<u32>) -> ScriptedBot {
+    /// Create a new bot instance for the given compound ID.
+    ///
+    /// Returns `None` if the Rune `new()` constructor fails (e.g., script error).
+    pub fn new_bot(&self, compound_id: CompoundId<u32>) -> Option<ScriptedBot> {
         let mut vm = rune::Vm::new(self.runtime.clone(), self.unit.clone());
         let params = BotParams {
             bot_id: compound_id.bot_id(),
             internal_id: compound_id.internal_id(),
             global_id: compound_id.global_id(),
         };
-        let instance = vm
-            .call([&self.model, "new"], (params,))
-            .expect("Error construction");
-        ScriptedBot::new(self.behaviour.clone(), instance, vm)
+        match vm.call([&self.model, "new"], (params,)) {
+            Ok(instance) => Some(ScriptedBot::new(self.behaviour.clone(), instance, vm)),
+            Err(err) => {
+                log::error!("Error constructing bot '{}': {err}", self.model);
+                None
+            }
+        }
     }
 }

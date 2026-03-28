@@ -3,6 +3,10 @@ use crate::simulation::actor::simulation::{BotStateChange, InvokeHandler};
 use actix::dev::RecipientRequest;
 use actix::{Actor, Addr, Context, Handler, Recipient};
 
+/// Facade for interacting with the simulation actor from outside the actor system.
+///
+/// Provides a convenient interface to change bot states and invoke handlers
+/// without needing direct access to the simulation actor's address.
 #[derive(Clone)]
 pub struct SimulationFacade {
     user_state_change_tx: Recipient<BotStateChange>,

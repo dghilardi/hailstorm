@@ -81,11 +81,12 @@ impl ControllerApp {
         self.controller_addr.clone()
     }
 
-    /// Launch the controller and expose the grpc API
-    pub async fn launch(self, address: SocketAddr) {
-        self.grpc_router
-            .serve(address)
-            .await
-            .expect("Error running grpc server")
+    /// Launch the controller and expose the gRPC API.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the gRPC server fails to bind or serve.
+    pub async fn launch(self, address: SocketAddr) -> Result<(), tonic::transport::Error> {
+        self.grpc_router.serve(address).await
     }
 }

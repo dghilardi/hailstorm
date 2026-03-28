@@ -193,8 +193,12 @@ impl<ContextBuilder> AgentBuilder<ContextBuilder, String, SocketAddr>
 where
     ContextBuilder: FnOnce(Addr<SimulationActor>) -> rune::Context,
 {
-    /// Build and start the agent using grpc as communication channel agent to agent and agent to controller
-    pub async fn launch_grpc(self) {
+    /// Build and start the agent using gRPC as communication channel agent-to-agent and agent-to-controller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the gRPC server fails to bind or serve.
+    pub async fn launch_grpc(self) -> Result<(), tonic::transport::Error> {
         let address = self.downstream;
         let runtime = self.launch::<GrpcUpstreamAgentActor>();
 
@@ -205,7 +209,6 @@ where
             ))
             .serve(address)
             .await
-            .unwrap();
     }
 }
 
@@ -273,7 +276,8 @@ mod test {
 
         // TODO: find a better way to test grpc server
         match tokio::time::timeout(Duration::from_secs(10), serve_fut).await {
-            Ok(()) => log::warn!("grpc server completed in less tha 10s"),
+            Ok(Ok(())) => log::warn!("grpc server completed in less than 10s"),
+            Ok(Err(err)) => log::error!("grpc server error: {err}"),
             Err(_elapsed) => log::debug!("grpc server started"),
         }
     }

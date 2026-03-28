@@ -81,7 +81,7 @@ impl<I: VarintDecode> VarintDecode for Vec<I> {
             .iter()
             .cloned()
             .fold(vec![Vec::<u8>::new()], |mut acc, byte| {
-                let last_vec = acc.last_mut().expect("At leas one vec is needed");
+                let last_vec = acc.last_mut().expect("at least one vec is needed");
                 match last_vec.last() {
                     None => {
                         if byte > 0 {

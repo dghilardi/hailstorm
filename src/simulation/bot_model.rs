@@ -68,15 +68,22 @@ impl BotModel {
         let usr_id = self.id_generator.next();
         let compound_id = CompoundId::new(self.agent_id, self.model_id, usr_id);
         let internal_id = compound_id.internal_id();
-        let bot_behaviour = self.bot_factory.new_bot(compound_id);
 
-        self.bots.insert(
-            internal_id,
-            SimulationBot {
-                state: BotState::Running,
-                addr: BotActor::create(|_| BotActor::new(internal_id, addr, bot_behaviour)),
-            },
-        );
+        match self.bot_factory.new_bot(compound_id) {
+            Some(bot_behaviour) => {
+                self.bots.insert(
+                    internal_id,
+                    SimulationBot {
+                        state: BotState::Running,
+                        addr: BotActor::create(|_| BotActor::new(internal_id, addr, bot_behaviour)),
+                    },
+                );
+            }
+            None => {
+                self.id_generator.release_id(usr_id);
+                log::error!("Failed to create bot, releasing ID {usr_id}");
+            }
+        }
     }
 
     pub fn count_by_state(&self) -> HashMap<BotState, usize> {

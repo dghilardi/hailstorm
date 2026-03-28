@@ -97,7 +97,6 @@ impl AgentCoreActor {
                     SimulationState::Ready => grpc::AgentSimulationState::Ready,
                     SimulationState::Waiting => grpc::AgentSimulationState::Waiting,
                     SimulationState::Running => grpc::AgentSimulationState::Running,
-                    SimulationState::Stopping => grpc::AgentSimulationState::Stopping,
                 };
 
                 let model_states = act

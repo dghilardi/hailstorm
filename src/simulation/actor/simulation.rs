@@ -1,7 +1,5 @@
 use std::cmp::{min, Ordering};
 use std::collections::HashMap;
-use std::f64::consts::PI;
-use std::ops::{Mul, Sub};
 use std::time::{Duration, SystemTime};
 
 use crate::agent::builder::SimulationParams;
@@ -228,22 +226,19 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                     }
 
                     self.bots.drain();
-                    self.bot_registry
-                        .model_names()
-                        .into_iter()
-                        .enumerate()
-                        .for_each(|(idx, model)| {
-                            self.bots.insert(
-                                model.to_string(),
-                                BotModel::new(
-                                    self.agent_id,
-                                    idx as u32,
-                                    self.bot_registry
-                                        .build_factory(model)
-                                        .unwrap_or_else(|| panic!("No factory for {model}")),
-                                ),
-                            );
-                        });
+                    for (idx, model) in self.bot_registry.model_names().into_iter().enumerate() {
+                        match self.bot_registry.build_factory(model) {
+                            Some(factory) => {
+                                self.bots.insert(
+                                    model.to_string(),
+                                    BotModel::new(self.agent_id, idx as u32, factory),
+                                );
+                            }
+                            None => {
+                                log::error!("No factory available for model '{model}', skipping");
+                            }
+                        }
+                    }
                 }
                 SimulationCommand::LaunchSimulation { start_ts } => {
                     self.start_ts = Some(start_ts);
@@ -268,12 +263,12 @@ impl Handler<SimulationCommandLst> for SimulationActor {
     }
 }
 
+/// Current state of the simulation from the agent's perspective.
 pub(crate) enum SimulationState {
     Idle,
     Ready,
     Waiting,
     Running,
-    Stopping,
 }
 
 pub(crate) struct ClientStats {
@@ -287,7 +282,6 @@ pub(crate) struct SimulationStats {
     pub stats: Vec<ClientStats>,
     pub timestamp: SystemTime,
     pub state: SimulationState,
-    pub simulation_id: String,
 }
 
 #[derive(Message)]
@@ -322,7 +316,6 @@ impl Handler<FetchSimulationStats> for SimulationActor {
             stats,
             timestamp: SystemTime::now(),
             state,
-            simulation_id: "".to_string(),
         }
     }
 }

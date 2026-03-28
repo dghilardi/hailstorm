@@ -8,9 +8,8 @@ use crate::simulation::rune::extension::bot::BotBehaviour;
 use crate::simulation::rune::extension::{bot, metrics};
 use actix::{Actor, Addr, Handler};
 use rune::compile::{Component, ItemBuf};
-use rune::runtime::debug::DebugArgs;
 use rune::runtime::RuntimeContext;
-use rune::{Context, Diagnostics, Hash, Source, Sources, Unit, Vm};
+use rune::{Context, Diagnostics, Source, Sources, Unit, Vm};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -26,11 +25,10 @@ pub struct BotRegistry {
     unit: Arc<Unit>,
 }
 
+/// Minimal signature info extracted from debug info for bot type discovery.
 #[derive(Debug)]
 struct FunSignature {
-    hash: Hash,
     path: ItemBuf,
-    args: DebugArgs,
 }
 
 impl BotRegistry {
@@ -94,20 +92,14 @@ impl BotRegistry {
             .ok_or(LoadScriptError::NoDebugInfo)?
             .functions
             .iter()
-            .fold(HashMap::new(), |mut acc, (hash, dbg)| {
+            .fold(HashMap::new(), |mut acc, (_hash, dbg)| {
                 let mut path = dbg.path.clone();
                 let _last = path.pop().expect("Empty path");
 
                 acc.entry(path.to_string())
                     .or_insert_with(Vec::new)
                     .push(FunSignature {
-                        hash: *hash,
                         path: dbg.path.clone(),
-                        args: match &dbg.args {
-                            DebugArgs::EmptyArgs => DebugArgs::EmptyArgs,
-                            DebugArgs::TupleArgs(ta) => DebugArgs::TupleArgs(*ta),
-                            DebugArgs::Named(named) => DebugArgs::Named(named.clone())
-                        },
                     });
                 acc
             }).into_iter()
