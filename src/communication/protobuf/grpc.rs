@@ -5,9 +5,9 @@ tonic::include_proto!("hailstorm");
 impl Target {
     pub(crate) fn includes_agent(&self, agent_id: u32) -> bool {
         match self {
-            Target::Group(grp_id) => match AgentGroup::from_i32(*grp_id) {
-                Some(AgentGroup::All) => true,
-                None => false,
+            Target::Group(grp_id) => match AgentGroup::try_from(*grp_id) {
+                Ok(AgentGroup::All) => true,
+                Err(_) => false,
             },
             Target::AgentId(target_agent_id) => target_agent_id.eq(&agent_id),
             Target::Agents(MultiAgent { agent_ids }) => agent_ids
