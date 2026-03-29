@@ -120,16 +120,19 @@ mod test {
         .expect("Error initializing storage module with empty initializer");
     }
 
-    fn run_rune_script<Out>(script: &str, module: Module) -> Result<Out, rune::Error>
+    fn run_rune_script<Out>(
+        script: &str,
+        module: Module,
+    ) -> Result<Out, Box<dyn std::error::Error>>
     where
         Out: FromValue,
     {
         let mut context = Context::with_default_modules()?;
-        context.install(module).expect("Error registering module");
-        let runtime = Arc::new(context.runtime());
+        context.install(module)?;
+        let runtime = Arc::new(context.runtime()?);
 
         let mut sources = Sources::new();
-        sources.insert(Source::new("mem", script));
+        sources.insert(Source::new("mem", script)?)?;
 
         let mut diagnostics = Diagnostics::new();
 
@@ -146,7 +149,7 @@ mod test {
         let unit = result?;
         let mut vm = Vm::new(runtime, Arc::new(unit));
 
-        let output = vm.execute(["main"], ())?.complete()?;
+        let output = vm.execute(["main"], ())?.complete().into_result()?;
         let output = Out::from_value(output)?;
 
         Ok(output)

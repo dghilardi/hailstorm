@@ -109,15 +109,16 @@ mod module_tests {
     use rune::{runtime::Vm, Context, Diagnostics, FromValue, Source, Sources};
     use std::sync::Arc;
 
-    fn run_rune_script(script: &str, env_module: Module) -> Result<Option<String>, rune::Error> {
+    fn run_rune_script(
+        script: &str,
+        env_module: Module,
+    ) -> Result<Option<String>, Box<dyn std::error::Error>> {
         let mut context = Context::with_default_modules()?;
-        context
-            .install(env_module)
-            .expect("Error registering module");
-        let runtime = Arc::new(context.runtime());
+        context.install(env_module)?;
+        let runtime = Arc::new(context.runtime()?);
 
         let mut sources = Sources::new();
-        sources.insert(Source::new("mem", script));
+        sources.insert(Source::new("mem", script)?)?;
 
         let mut diagnostics = Diagnostics::new();
 
@@ -134,14 +135,14 @@ mod module_tests {
         let unit = result?;
         let mut vm = Vm::new(runtime, Arc::new(unit));
 
-        let output = vm.execute(["main"], ())?.complete()?;
+        let output = vm.execute(["main"], ())?.complete().into_result()?;
         let output = Option::<String>::from_value(output)?;
 
         Ok(output)
     }
 
     #[test]
-    fn module_exposes_read_function() -> Result<(), rune::Error> {
+    fn module_exposes_read_function() -> Result<(), Box<dyn std::error::Error>> {
         std::env::set_var("RUNE_TEST_VAR", "789");
         let cfg = EnvModuleConf::default().with_prefix("RUNE");
         let env_module = module(cfg)?;

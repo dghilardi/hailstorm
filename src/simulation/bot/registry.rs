@@ -285,13 +285,11 @@ mod test {
         registry
             .load_script(
                 r###"
-        use hailstorm::bot::ActionTrigger;
-
         struct Demo { id }
         impl Demo {
             pub fn register_bot(bot) {
-                bot.register_action(ActionTrigger::alive(10.0), Self::do_something);
-                bot.register_action(ActionTrigger::alive(10.0), Self::do_something_else);
+                bot.register_action(hailstorm::bot::alive(10.0), Self::do_something);
+                bot.register_action(hailstorm::bot::alive(10.0), Self::do_something_else);
           }
           pub fn new() {
             Self { id: 10 }
