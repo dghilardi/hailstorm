@@ -6,7 +6,7 @@ use actix::{
     Actor, ActorContext, ActorFutureExt, Addr, AsyncContext, AtomicResponse, Context, Handler,
     Message, Recipient, ResponseActFuture, WrapFuture,
 };
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use rune::Hash;
 use std::time::Duration;
 use thiserror::Error;
@@ -71,7 +71,7 @@ impl Actor for BotActor {
         log::debug!("Bot actor started");
         let interval = self.bot.as_ref().expect("bot not defined").get_interval();
         let random_delay =
-            Duration::from_millis(thread_rng().gen_range(0..interval.as_millis() as u64));
+            Duration::from_millis(rand::rng().random_range(0..interval.as_millis() as u64));
         ctx.run_later(random_delay, move |_a, ctx| {
             ctx.run_interval_weak(interval, |addr| async move {
                 match addr.send(DoAction).await {

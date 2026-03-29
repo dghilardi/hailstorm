@@ -4,7 +4,7 @@ use hailstorm::simulation::rune::extension;
 use hailstorm::simulation::rune::extension::env::EnvModuleConf;
 use hailstorm::simulation::rune::extension::storage::initializer::empty::EmptyInitializer;
 use hailstorm::simulation::rune::extension::storage::StorageModuleArgs;
-use rand::{thread_rng, RngCore};
+use rand::RngCore;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::net::ToSocketAddrs;
@@ -55,7 +55,7 @@ async fn main() {
     log::info!("Starting Hailstorm Agent...");
 
     AgentBuilder::default()
-        .agent_id(config.agent_id.unwrap_or_else(|| thread_rng().next_u32()))
+        .agent_id(config.agent_id.unwrap_or_else(|| rand::rng().next_u32()))
         .simulation_params(config.simulation.into())
         .downstream(config.address.to_socket_addrs().unwrap().next().unwrap())
         .upstream(config.upstream.unwrap_or_default())

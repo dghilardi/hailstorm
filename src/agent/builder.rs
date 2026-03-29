@@ -9,7 +9,7 @@ use crate::communication::upstream::grpc::GrpcUpstreamAgentActor;
 use crate::simulation::actor::simulation::SimulationActor;
 use crate::simulation::bot::registry::BotRegistry;
 use actix::{Actor, Addr, AsyncContext, Context};
-use rand::{thread_rng, RngCore};
+use rand::RngCore;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tonic::transport::Server;
@@ -54,7 +54,7 @@ pub struct AgentBuilder<ContextBuilder, UpstreamCfg, DownstreamCfg> {
 impl<UpstreamCfg> Default for AgentBuilder<(), UpstreamCfg, ()> {
     fn default() -> Self {
         Self {
-            agent_id: thread_rng().next_u32(),
+            agent_id: rand::rng().next_u32(),
             simulation_params: SimulationParams::default(),
             downstream: (),
             upstream: Default::default(),

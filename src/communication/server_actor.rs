@@ -9,7 +9,7 @@ use actix::{
 };
 use futures::future::ready;
 use futures::StreamExt;
-use rand::{thread_rng, RngCore};
+use rand::RngCore;
 use std::collections::HashMap;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
@@ -51,7 +51,7 @@ impl Handler<RegisterConnectedAgentMsg> for GrpcServerActor {
 
     fn handle(&mut self, msg: RegisterConnectedAgentMsg, ctx: &mut Self::Context) -> Self::Result {
         let ca_addr = DownstreamAgentActor::create(|_| DownstreamAgentActor::new(msg.cmd_sender));
-        let connection_id = thread_rng().next_u64();
+        let connection_id = rand::rng().next_u64();
         let connection = DownstreamConnection {
             agent_ids: Default::default(),
             sender: ca_addr,

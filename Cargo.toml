@@ -12,7 +12,7 @@ readme = "README.md"
 [dependencies]
 time = { version = "0.3.11", features = ["formatting"] }
 log = "0.4.17"
-rand = "0.8.5"
+rand = "0.9"
 thiserror = "2"
 lazy_static = "1.4.0"
 

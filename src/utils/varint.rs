@@ -109,7 +109,7 @@ impl<I: VarintDecode> VarintDecode for Vec<I> {
 #[cfg(test)]
 mod test {
     use crate::utils::varint::{VarintDecode, VarintDecodeError, VarintEncode};
-    use rand::{thread_rng, RngCore};
+    use rand::RngCore;
 
     #[test]
     fn roundtrip_zero() {
@@ -132,7 +132,7 @@ mod test {
     #[test]
     fn roundtrip_random() {
         for _ in 0..100 {
-            let value = thread_rng().next_u32();
+            let value = rand::rng().next_u32();
             let bytes = value.to_varint();
             let decoded = u32::from_varint(&bytes).unwrap();
             assert_eq!(value, decoded, "roundtrip failed for {value}");
@@ -141,7 +141,7 @@ mod test {
 
     #[test]
     fn vec_roundtrip() {
-        let arg = vec![0, thread_rng().next_u32(), u32::MAX];
+        let arg = vec![0, rand::rng().next_u32(), u32::MAX];
         let bytes = arg.to_varint();
         let decoded = Vec::<u32>::from_varint(&bytes).unwrap();
         assert_eq!(arg, decoded);

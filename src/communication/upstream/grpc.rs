@@ -9,7 +9,7 @@ use actix::{
 };
 use futures::future::{ok, ready};
 use futures::{StreamExt, TryFutureExt};
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use std::cmp::min;
 use std::time::Duration;
 use thiserror::Error;
@@ -184,7 +184,7 @@ impl Handler<EstablishConnection> for GrpcUpstreamAgentActor {
 
 fn truncated_exponential_backoff(attempt_n: u32, max_backoff: Duration) -> Duration {
     let base = 2u64.saturating_pow(attempt_n.min(30));
-    let jitter = Duration::from_millis(thread_rng().gen_range(0..1000));
+    let jitter = Duration::from_millis(rand::rng().random_range(0..1000));
     min(Duration::from_secs(base).saturating_add(jitter), max_backoff)
 }
 

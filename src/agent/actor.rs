@@ -11,7 +11,7 @@ use actix::{
 };
 use futures::future::ok;
 use futures::{join, StreamExt};
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use tokio::sync::mpsc::Receiver;
 
 use crate::communication::message::{ControllerCommandMessage, SendAgentMessage};
@@ -120,7 +120,7 @@ impl AgentCoreActor {
                                 model,
                             })
                             .collect(),
-                        update_id: thread_rng().gen(),
+                        update_id: rand::rng().random(),
                         timestamp: Some(SystemTime::now().into()),
                         name: "".to_string(),
                         state: state as i32,

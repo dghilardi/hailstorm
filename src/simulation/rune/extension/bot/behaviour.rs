@@ -1,5 +1,5 @@
 use crate::simulation::actor::bot::BotState;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use rune::runtime::{Function, Shared};
 use rune::{Any, Hash};
 use std::collections::HashMap;
@@ -69,7 +69,7 @@ impl BotBehaviour {
     }
 
     pub fn random_action(&self) -> Hash {
-        let mut rand = thread_rng().gen_range(0f64..self.total_weight);
+        let mut rand = rand::rng().random_range(0f64..self.total_weight);
         for act in &self.actions {
             rand -= act.weight as f64;
             if rand <= 0f64 {
