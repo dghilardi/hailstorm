@@ -1,6 +1,6 @@
 use crate::simulation::actor::bot::BotState;
 use rand::Rng;
-use rune::runtime::{Function, Shared};
+use rune::runtime::Function;
 use rune::{Any, Hash};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -44,11 +44,8 @@ impl Default for BotBehaviour {
 }
 
 impl BotBehaviour {
-    pub fn register_action(&mut self, trigger: ActionTrigger, action: Shared<Function>) {
-        let hash = action
-            .take()
-            .expect("Error extracting action hash")
-            .type_hash();
+    pub fn register_action(&mut self, trigger: ActionTrigger, action: Function) {
+        let hash = action.type_hash();
         match trigger {
             ActionTrigger::Alive { weight } => {
                 let weight = weight.max(0f32);

@@ -7,7 +7,7 @@ use crate::simulation::compound_id::CompoundId;
 use crate::simulation::rune::extension::bot::BotBehaviour;
 use crate::simulation::rune::extension::{bot, metrics};
 use actix::{Actor, Addr, Handler};
-use rune::compile::{Component, ItemBuf};
+use rune::item::ComponentRef;
 use rune::runtime::RuntimeContext;
 use rune::{Context, Diagnostics, Source, Sources, Unit, Vm};
 use std::collections::HashMap;
@@ -23,12 +23,6 @@ pub struct BotRegistry {
     context: Context,
     runtime: Arc<RuntimeContext>,
     unit: Arc<Unit>,
-}
-
-/// Minimal signature info extracted from debug info for bot type discovery.
-#[derive(Debug)]
-struct FunSignature {
-    path: ItemBuf,
 }
 
 impl BotRegistry {
@@ -51,9 +45,10 @@ impl BotRegistry {
             + Handler<StartActionTimer>
             + Handler<StopActionTimer>,
     {
-        context.install(&bot::module()?)?;
-        context.install(&metrics::module(metrics_mgr_addr)?)?;
-        let runtime = Arc::new(context.runtime());
+        context.install(bot::module()?)?;
+        context.install(metrics::module(metrics_mgr_addr)?)?;
+        let runtime = Arc::new(context.runtime()?);
+
 
         Ok(Self {
             bot_types: Default::default(),
@@ -77,7 +72,9 @@ impl BotRegistry {
         let mut diagnostics = Diagnostics::new();
 
         let mut sources = Sources::new();
-        sources.insert(Source::new("script", script));
+        sources.insert(Source::new("script", script)
+            .map_err(|e| LoadScriptError::InvalidScript(e.to_string()))?)
+            .map_err(|e| LoadScriptError::InvalidScript(e.to_string()))?;
 
         let unit = rune::prepare(&mut sources)
             .with_context(&self.context)
@@ -88,34 +85,47 @@ impl BotRegistry {
 
         let mut vm = Vm::new(self.runtime.clone(), unit.clone());
 
-        let bot_types = unit.debug_info()
-            .ok_or(LoadScriptError::NoDebugInfo)?
-            .functions
-            .iter()
-            .fold(HashMap::new(), |mut acc, (_hash, dbg)| {
-                let mut path = dbg.path.clone();
-                let _last = path.pop().expect("Empty path");
+        // Discover bot types by inspecting debug info for structs with both `new` and `register_bot` methods.
+        let debug_info = unit.debug_info().ok_or(LoadScriptError::NoDebugInfo)?;
 
-                acc.entry(path.to_string())
-                    .or_insert_with(Vec::new)
-                    .push(FunSignature {
-                        path: dbg.path.clone(),
-                    });
-                acc
-            }).into_iter()
-            .filter(|(k, v)| {
-                let has_new_constructor = v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("new".into())));
-                let has_register_bot_fn = v.iter().any(|fun| fun.path.clone().pop().unwrap().eq(&Component::Str("register_bot".into())));
-                let is_a_bot = has_new_constructor && has_register_bot_fn;
+        // Group functions by their parent type name (e.g., "Demo::new" -> parent "Demo")
+        let mut types_with_methods: HashMap<String, Vec<String>> = HashMap::new();
+        for (_hash, dbg) in &debug_info.functions {
+            let method_name = dbg.path.last().and_then(|c| match c {
+                ComponentRef::Str(s) => Some(s.to_string()),
+                _ => None,
+            });
+            if let Some(method) = method_name {
+                // Build parent path by collecting all components except the last
+                let components: Vec<_> = dbg.path.iter().collect();
+                if components.len() >= 2 {
+                    let parent_name = components[..components.len() - 1]
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect::<Vec<_>>()
+                        .join("::");
+                    types_with_methods
+                        .entry(parent_name)
+                        .or_default()
+                        .push(method);
+                }
+            }
+        }
 
+        let bot_types = types_with_methods
+            .into_iter()
+            .filter(|(k, methods)| {
+                let has_new = methods.iter().any(|m| m == "new");
+                let has_register = methods.iter().any(|m| m == "register_bot");
+                let is_a_bot = has_new && has_register;
                 if !is_a_bot {
-                    log::debug!("Skipping {k} it is not a bot - has new: {has_new_constructor}, has register: {has_register_bot_fn}");
+                    log::debug!("Skipping {k} — not a bot (has new: {has_new}, has register: {has_register})");
                 }
                 is_a_bot
             })
-            .flat_map(|(k, _sig)| {
+            .flat_map(|(k, _)| {
                 let mut bot = BotBehaviour::default();
-                let register_out = vm.call(&[k.clone(), String::from("register_bot")], (&mut bot, ));
+                let register_out = vm.call([k.as_str(), "register_bot"], (&mut bot,));
 
                 match register_out {
                     Ok(_) => {
@@ -123,7 +133,7 @@ impl BotRegistry {
                         Some((k, bot))
                     }
                     Err(err) => {
-                        log::error!("Error: {err}");
+                        log::error!("Error registering bot '{k}': {err}");
                         None
                     }
                 }

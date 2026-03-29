@@ -1,193 +1,127 @@
-use crate::simulation::rune::types::object::OwnedObject;
-use crate::simulation::rune::types::vec::OwnedVec;
-use rune::runtime::{Bytes, Shared, StaticString, UnitStruct, VmError};
+use rune::runtime::RuntimeError;
 use rune::{FromValue, ToValue, Value};
-use std::sync::Arc;
 
-/// Owned version of rune `Value` type
+/// Owned, `Send`-safe representation of a rune [`Value`].
+///
+/// Rune 0.14 `Value` is not `Send`, so this type extracts the inner data
+/// into standard Rust types that can be safely sent across thread boundaries
+/// (as required by actix message passing).
 pub enum OwnedValue {
     /// The unit value.
     Unit,
     /// A boolean.
     Bool(bool),
-    /// A single byte.
-    Byte(u8),
     /// A character.
     Char(char),
-    /// A number.
+    /// A signed integer.
     Integer(i64),
+    /// An unsigned integer.
+    Unsigned(u64),
     /// A float.
     Float(f64),
-    /// A static string.
-    ///
-    /// While `Rc<str>` would've been enough to store an unsized `str`, either
-    /// `Box<str>` or `String` must be used to reduce the size of the type to
-    /// 8 bytes, to ensure that a stack value is 16 bytes in size.
-    ///
-    /// `Rc<str>` on the other hand wraps a so-called fat pointer, which is 16
-    /// bytes.
-    StaticString(Arc<StaticString>),
     /// A UTF-8 string.
     String(String),
-    /// A byte string.
-    Bytes(Bytes),
-    /// A vector.
-    Vec(OwnedVec),
-    /// An object.
-    Object(OwnedObject),
-    /// An empty value indicating nothing.
+    /// An optional value.
     Option(Option<Box<OwnedValue>>),
-    /// A stored result in a slot.
+    /// A result value.
     Result(Result<Box<OwnedValue>, Box<OwnedValue>>),
-    /// An struct with a well-defined type.
-    UnitStruct(UnitStruct),
+    /// Any other opaque value (status extraction returns 0).
+    Opaque,
 }
 
 impl OwnedValue {
+    /// Extract a numeric status code from the value.
+    ///
+    /// Used by the metrics system to categorize action outcomes (e.g., HTTP status codes).
     pub fn extract_status(&self) -> i64 {
         match self {
-            OwnedValue::Unit => 0,
-            OwnedValue::Bool(_) => 0,
-            OwnedValue::Byte(_) => 0,
-            OwnedValue::Char(_) => 0,
             OwnedValue::Integer(v) => *v,
-            OwnedValue::Float(_) => 0,
-            OwnedValue::StaticString(_) => 0,
-            OwnedValue::String(_) => 0,
-            OwnedValue::Bytes(_) => 0,
+            OwnedValue::Unsigned(v) => *v as i64,
             OwnedValue::Option(None) => -1,
             OwnedValue::Option(Some(v)) => v.extract_status(),
             OwnedValue::Result(Ok(v)) => v.extract_status(),
             OwnedValue::Result(Err(v)) => v.extract_status(),
-            OwnedValue::UnitStruct(_) => 0,
-            OwnedValue::Object(_) => 0,
-            OwnedValue::Vec(_) => 0,
+            _ => 0,
         }
     }
 }
 
 impl FromValue for OwnedValue {
-    fn from_value(value: Value) -> Result<Self, VmError> {
-        match value {
-            Value::Unit => Ok(Self::Unit),
-            Value::Bool(v) => Ok(Self::Bool(v)),
-            Value::Byte(v) => Ok(Self::Byte(v)),
-            Value::Char(v) => Ok(Self::Char(v)),
-            Value::Integer(v) => Ok(Self::Integer(v)),
-            Value::Float(v) => Ok(Self::Float(v)),
-            Value::Type(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::Type'",
-            )),
-            Value::StaticString(v) => Ok(Self::StaticString(v)),
-            Value::String(v) => Ok(Self::String(v.take()?)),
-            Value::Bytes(v) => Ok(Self::Bytes(v.take()?)),
-            Value::Vec(v) => Ok(Self::Vec(OwnedVec::from_iter(
-                v.take()?
-                    .into_iter()
-                    .map(OwnedValue::from_value)
-                    .collect::<Result<Vec<_>, _>>()?,
-            ))),
-            Value::Tuple(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::Tuple'",
-            )),
-            Value::Object(v) => Ok(Self::Object(OwnedObject::from_iter(
-                v.take()?
-                    .into_iter()
-                    .map(|(k, v)| OwnedValue::from_value(v).map(|v| (k, v)))
-                    .collect::<Result<Vec<_>, _>>()?,
-            ))),
-            Value::Range(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::Range'",
-            )),
-            Value::Future(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::Future'",
-            )),
-            Value::Stream(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::Stream'",
-            )),
-            Value::Generator(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::Generator'",
-            )),
-            Value::GeneratorState(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::GeneratorState'",
-            )),
-            Value::Option(v) => Ok(Self::Option(
-                v.take()?
-                    .map(OwnedValue::from_value)
-                    .transpose()?
-                    .map(Box::new),
-            )),
-            Value::Result(v) => {
-                let res = match v.take()? {
-                    Ok(ok) => Ok(Box::new(OwnedValue::from_value(ok)?)),
-                    Err(err) => Err(Box::new(OwnedValue::from_value(err)?)),
-                };
-                Ok(OwnedValue::Result(res))
-            }
-            Value::UnitStruct(v) => Ok(Self::UnitStruct(v.take()?)),
-            Value::TupleStruct(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::TupleStruct'",
-            )),
-            Value::Struct(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::Struct'",
-            )),
-            Value::Variant(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::Variant'",
-            )),
-            Value::Function(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::Function'",
-            )),
-            Value::Format(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::Format'",
-            )),
-            Value::Iterator(_) => Err(VmError::panic(
-                "Unexpected action return type 'Value::Iterator'",
-            )),
-            Value::Any(_) => Err(VmError::panic("Unexpected action return type 'Value::Any'")),
+    fn from_value(value: Value) -> Result<Self, RuntimeError> {
+        // Try unit
+        if value.into_unit().is_ok() {
+            return Ok(Self::Unit);
         }
+
+        // Try bool
+        if let Ok(v) = value.as_integer::<i64>() {
+            return Ok(Self::Integer(v));
+        }
+
+        if let Ok(v) = value.as_integer::<u64>() {
+            return Ok(Self::Unsigned(v));
+        }
+
+        if let Ok(v) = bool::from_value(value.clone()) {
+            return Ok(Self::Bool(v));
+        }
+
+        if let Ok(v) = char::from_value(value.clone()) {
+            return Ok(Self::Char(v));
+        }
+
+        if let Ok(v) = f64::from_value(value.clone()) {
+            return Ok(Self::Float(v));
+        }
+
+        if let Ok(v) = String::from_value(value.clone()) {
+            return Ok(Self::String(v));
+        }
+
+        if let Ok(opt) = Option::<Value>::from_value(value.clone()) {
+            return Ok(Self::Option(match opt {
+                None => None,
+                Some(v) => Some(Box::new(OwnedValue::from_value(v)?)),
+            }));
+        }
+
+        if let Ok(res) = Result::<Value, Value>::from_value(value.clone()) {
+            return Ok(Self::Result(match res {
+                Ok(v) => Ok(Box::new(OwnedValue::from_value(v)?)),
+                Err(v) => Err(Box::new(OwnedValue::from_value(v)?)),
+            }));
+        }
+
+        // Fallback for types we can't extract (structs, tuples, etc.)
+        Ok(Self::Opaque)
     }
 }
 
 impl ToValue for OwnedValue {
-    fn to_value(self) -> Result<Value, VmError> {
+    fn to_value(self) -> Result<Value, RuntimeError> {
         match self {
-            OwnedValue::Unit => Ok(Value::Unit),
-            OwnedValue::Bool(v) => Ok(Value::Bool(v)),
-            OwnedValue::Byte(v) => Ok(Value::Byte(v)),
-            OwnedValue::Char(v) => Ok(Value::Char(v)),
-            OwnedValue::Integer(v) => Ok(Value::Integer(v)),
-            OwnedValue::Float(v) => Ok(Value::Float(v)),
-            OwnedValue::StaticString(v) => Ok(Value::StaticString(v)),
-            OwnedValue::String(v) => Ok(Value::String(Shared::new(v))),
-            OwnedValue::Bytes(v) => Ok(Value::Bytes(Shared::new(v))),
+            OwnedValue::Unit => Ok(rune::to_value(())?),
+            OwnedValue::Bool(v) => Ok(Value::from(v)),
+            OwnedValue::Char(v) => Ok(Value::from(v)),
+            OwnedValue::Integer(v) => Ok(Value::from(v)),
+            OwnedValue::Unsigned(v) => Ok(Value::from(v)),
+            OwnedValue::Float(v) => Ok(Value::from(v)),
+            OwnedValue::String(v) => rune::to_value(v),
             OwnedValue::Option(v) => {
-                let res = match v {
+                let opt = match v {
                     None => None,
-                    Some(value) => Some(OwnedValue::to_value(*value)?),
+                    Some(inner) => Some(inner.to_value()?),
                 };
-                Ok(Value::Option(Shared::new(res)))
+                rune::to_value(opt)
             }
             OwnedValue::Result(v) => {
                 let res = match v {
-                    Ok(ok) => Ok(OwnedValue::to_value(*ok)?),
-                    Err(err) => Err(OwnedValue::to_value(*err)?),
+                    Ok(inner) => Ok(inner.to_value()?),
+                    Err(inner) => Err(inner.to_value()?),
                 };
-                Ok(Value::Result(Shared::new(res)))
+                rune::to_value(res)
             }
-            OwnedValue::UnitStruct(v) => Ok(Value::UnitStruct(Shared::new(v))),
-            OwnedValue::Object(obj) => Ok(Value::Object(Shared::new(
-                rune::runtime::Object::from_iter(
-                    obj.into_iter()
-                        .map(|(k, v)| v.to_value().map(|v| (k, v)))
-                        .collect::<Result<Vec<_>, _>>()?,
-                ),
-            ))),
-            OwnedValue::Vec(vec) => Ok(Value::Vec(Shared::new(
-                vec.into_iter()
-                    .map(OwnedValue::to_value)
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into(),
-            ))),
+            OwnedValue::Opaque => Ok(rune::to_value(())?),
         }
     }
 }

@@ -93,11 +93,11 @@ fn read_env(maybe_prefix: Option<&String>, name: &str) -> Option<String> {
 /// let env_module = module(cfg).unwrap();
 /// ```
 pub fn module(cfg: EnvModuleConf) -> Result<Module, ContextError> {
-    let mut module = Module::with_crate_item("hailstorm", &["env"]);
+    let mut module = Module::with_crate_item("hailstorm", ["env"])?;
 
-    module.function(&["read"], move |name: &str| {
+    module.function("read", move |name: &str| {
         read_env(cfg.prefix.as_ref(), name)
-    })?;
+    }).build()?;
 
     Ok(module)
 }

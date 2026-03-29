@@ -17,6 +17,12 @@ impl From<ContextError> for BotError {
     }
 }
 
+impl From<rune::alloc::Error> for BotError {
+    fn from(e: rune::alloc::Error) -> Self {
+        Self::RuneInitError(e.to_string())
+    }
+}
+
 /// Errors that can occur when loading a Rune script.
 #[derive(Debug, thiserror::Error)]
 pub enum LoadScriptError {

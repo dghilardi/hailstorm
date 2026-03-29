@@ -90,16 +90,16 @@ pub fn module<Initializer>(args: StorageModuleArgs<Initializer>) -> Result<Modul
 where
     Initializer: StorageInitializerRegistry + Send + Sync + 'static,
 {
-    let mut module = Module::with_crate_item("hailstorm", &["storage"]);
+    let mut module = Module::with_crate_item("hailstorm", ["storage"])?;
 
     let registry = StorageRegistry::new(args.initializer);
-    module.function(&["get_bot_storage"], move |name, bot_id| {
+    module.function("get_bot_storage", move |name: &str, bot_id: u32| {
         registry.get_bot_storage(name, bot_id)
-    })?;
+    }).build()?;
 
     module.ty::<BotStorage>()?;
-    module.inst_fn("read", BotStorage::read)?;
-    module.inst_fn("write", BotStorage::write)?;
+    module.associated_function("read", BotStorage::read)?;
+    module.associated_function("write", BotStorage::write)?;
 
     Ok(module)
 }

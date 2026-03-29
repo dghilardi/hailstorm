@@ -7,13 +7,13 @@ pub fn module<A>(metrics_mgr_addr: Addr<A>) -> Result<Module, ContextError>
 where
     A: Actor<Context = Context<A>> + Handler<StartActionTimer> + Handler<StopActionTimer>,
 {
-    let mut module = Module::with_crate_item("hailstorm", &["metrics"]);
+    let mut module = Module::with_crate_item("hailstorm", ["metrics"])?;
 
     module.ty::<PerformanceRegistry>()?;
-    module.function(&["PerformanceRegistry", "new"], move |model| {
+    module.function("new", move |model: String| {
         PerformanceRegistry::new(model, metrics_mgr_addr.clone())
-    })?;
-    module.async_inst_fn("observe", PerformanceRegistry::observe)?;
+    }).build()?;
+    module.function_meta(PerformanceRegistry::observe)?;
 
     Ok(module)
 }
