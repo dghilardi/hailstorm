@@ -13,7 +13,7 @@ readme = "README.md"
 time = { version = "0.3.11", features = ["formatting"] }
 log = "0.4.17"
 rand = "0.8.5"
-thiserror = "1.0.31"
+thiserror = "2"
 lazy_static = "1.4.0"
 
 futures = "0.3.21"
@@ -32,14 +32,14 @@ rune-modules = { version = "0.12.0", features = ["http", "json"] }
 meval = "0.2.0"
 
 ringbuf = "0.2.8"
-dashmap = "5.3.4"
+dashmap = "6"
 serde = "1.0.137"
 csv = "1.1.6"
 
 [dev-dependencies]
-config = "0.13.1"
-env_logger = "0.9.0"
-clap = { version = "3.2.5", features = ["derive"] }
+config = "0.15"
+env_logger = "0.11"
+clap = { version = "4", features = ["derive"] }
 tempfile = "3.10.1"
 
 [build-dependencies]
