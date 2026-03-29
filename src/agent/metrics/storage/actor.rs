@@ -4,7 +4,8 @@ use crate::agent::metrics::storage::message::{
 };
 use actix::{Actor, Context, Handler, MessageResult};
 use lazy_static::lazy_static;
-use ringbuf::RingBuffer;
+use ringbuf::traits::{Consumer, Observer, Producer, Split};
+use ringbuf::HeapRb;
 use std::cmp::min;
 use std::collections::BTreeMap;
 use std::ops::{Add, Div};
@@ -14,13 +15,13 @@ use time::OffsetDateTime;
 
 pub(super) struct MFSnapshotStorage {
     last_snapshot: Option<SystemTime>,
-    buf_producer: ringbuf::Producer<MetricsFamilySnapshot>,
-    buf_consumer: ringbuf::Consumer<MetricsFamilySnapshot>,
+    buf_producer: ringbuf::HeapProd<MetricsFamilySnapshot>,
+    buf_consumer: ringbuf::HeapCons<MetricsFamilySnapshot>,
 }
 
 impl Default for MFSnapshotStorage {
     fn default() -> Self {
-        let buffer = RingBuffer::new(60);
+        let buffer = HeapRb::new(60);
         let (buf_producer, buf_consumer) = buffer.split();
         Self {
             last_snapshot: None,
@@ -34,7 +35,7 @@ impl MFSnapshotStorage {
     pub fn add_snapshot(&mut self, timestamp: SystemTime, metrics: MetricsFamily) {
         let out = self
             .buf_producer
-            .push(MetricsFamilySnapshot { timestamp, metrics });
+            .try_push(MetricsFamilySnapshot { timestamp, metrics });
         if let Err(MetricsFamilySnapshot { timestamp, .. }) = out {
             log::error!("Error saving metrics snapshot {:?}", timestamp);
         } else {
@@ -163,8 +164,8 @@ impl Handler<FetchMetrics> for MetricsStorageActor {
     type Result = MessageResult<FetchMetrics>;
 
     fn handle(&mut self, _msg: FetchMetrics, _ctx: &mut Self::Context) -> Self::Result {
-        let mut res = Vec::with_capacity(self.snapshots.buf_consumer.len());
-        while let Some(snapshot) = self.snapshots.buf_consumer.pop() {
+        let mut res = Vec::with_capacity(self.snapshots.buf_consumer.occupied_len());
+        while let Some(snapshot) = self.snapshots.buf_consumer.try_pop() {
             res.push(snapshot)
         }
         MessageResult(res)

@@ -31,7 +31,7 @@ rune = "0.12.0"
 rune-modules = { version = "0.12.0", features = ["http", "json"] }
 meval = "0.2.0"
 
-ringbuf = "0.2.8"
+ringbuf = "0.4"
 dashmap = "6"
 serde = "1.0.137"
 csv = "1.1.6"
