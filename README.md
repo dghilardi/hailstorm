@@ -83,7 +83,9 @@ Scripts can use `ActionTrigger::alive`, `ActionTrigger::enter_state` and
 remain available. Call `perf.observe("action", callback).await` to time either a
 synchronous or asynchronous callback; it returns the original response and
 records the completed outcome, including errors. Cancelled observations are
-finalized with outcome `-2`; execution errors use `-1`.
+finalized with outcome `-2`; execution errors use `-1`. Actor callbacks preserve
+objects, lists, tuples, bytes, and nested option/result values when transferring
+data. Unsupported native values or cyclic/deeply nested payloads return errors.
 
 ```sh
 # .env.controller
