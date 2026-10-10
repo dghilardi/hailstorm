@@ -82,7 +82,8 @@ Scripts can use `ActionTrigger::alive`, `ActionTrigger::enter_state` and
 `hailstorm::metrics` type paths. The module-level aliases introduced in 0.3.0
 remain available. Call `perf.observe("action", callback).await` to time either a
 synchronous or asynchronous callback; it returns the original response and
-records the completed outcome, including errors.
+records the completed outcome, including errors. Cancelled observations are
+finalized with outcome `-2`; execution errors use `-1`.
 
 ```sh
 # .env.controller

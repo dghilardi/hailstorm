@@ -37,6 +37,26 @@ pub struct PerformanceRegistry {
     stop_timer_recipient: Recipient<StopActionTimer>,
 }
 
+struct ObservationGuard {
+    timer: Option<StartedActionTimer>,
+    before: Instant,
+    stop_timer_recipient: Recipient<StopActionTimer>,
+}
+
+impl Drop for ObservationGuard {
+    fn drop(&mut self) {
+        if let Some(timer) = self.timer.take() {
+            self.stop_timer_recipient.do_send(StopActionTimer::new(
+                timer,
+                ExecutionInfo {
+                    elapsed: self.before.elapsed(),
+                    outcome: -2,
+                },
+            ));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,13 +67,31 @@ mod tests {
     use rune::FromValue;
     use std::sync::Arc;
 
-    pub(super) fn vm(script: &str, manager: Addr<MetricsManagerActor>) -> rune::Vm {
+    fn vm(script: &str, manager: Addr<MetricsManagerActor>) -> rune::Vm {
+        vm_with_entered(script, manager, Arc::new(tokio::sync::Notify::new()))
+    }
+
+    fn vm_with_entered(
+        script: &str,
+        manager: Addr<MetricsManagerActor>,
+        entered: Arc<tokio::sync::Notify>,
+    ) -> rune::Vm {
         let mut context = rune::Context::with_default_modules().unwrap();
         context.install(module::module(manager).unwrap()).unwrap();
         let mut native = rune::Module::with_crate("test").unwrap();
         native
             .function("pause", || async {
                 tokio::time::sleep(Duration::from_millis(40)).await;
+            })
+            .build()
+            .unwrap();
+        native
+            .function("wait_forever", move || {
+                let entered = entered.clone();
+                async move {
+                    entered.notify_one();
+                    std::future::pending::<()>().await;
+                }
             })
             .build()
             .unwrap();
@@ -167,6 +205,60 @@ mod tests {
         let metrics = &snapshots[0].metrics.last().unwrap().metrics[&503];
         assert_eq!(metrics.histogram.iter().sum::<u64>(), 1);
     }
+    #[actix::test]
+    async fn cancelling_an_observation_records_one_cancelled_measurement() {
+        let manager = MetricsManagerActor::start_default();
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let mut vm = vm_with_entered(
+            r#"
+            pub async fn action() { test::wait_forever().await }
+            pub async fn main() {
+                let perf = hailstorm::metrics::new("Bot");
+                perf.observe("wait", action).await
+            }
+            "#,
+            manager.clone(),
+            entered.clone(),
+        );
+        let execution = actix::spawn(async move { vm.async_call(["main"], ()).await });
+        tokio::time::timeout(Duration::from_secs(1), entered.notified())
+            .await
+            .unwrap();
+        execution.abort();
+        match execution.await {
+            Err(err) => assert!(err.is_cancelled()),
+            Ok(_) => panic!("observation should have been cancelled"),
+        }
+        let snapshots = manager.send(FetchActionMetrics).await.unwrap();
+        assert_eq!(snapshots.len(), 1);
+        let metrics = &snapshots[0].metrics.last().unwrap().metrics;
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[&-2].histogram.iter().sum::<u64>(), 1);
+    }
+
+    #[actix::test]
+    async fn completed_observations_preserve_the_outcome_without_counting_cancellation() {
+        let manager = MetricsManagerActor::start_default();
+        let mut vm = vm(
+            r#"
+            pub async fn action() { 7 }
+            pub async fn main() {
+                let perf = hailstorm::metrics::new("Bot");
+                perf.observe("done", action).await
+            }
+            "#,
+            manager.clone(),
+        );
+        assert_eq!(
+            i64::from_value(vm.async_call(["main"], ()).await.unwrap()).unwrap(),
+            7
+        );
+        drop(vm);
+        let snapshots = manager.send(FetchActionMetrics).await.unwrap();
+        let metrics = &snapshots[0].metrics.last().unwrap().metrics;
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[&7].histogram.iter().sum::<u64>(), 1);
+    }
 }
 
 impl PerformanceRegistry {
@@ -218,6 +310,11 @@ impl PerformanceRegistry {
     async fn observe_action(&self, name: &str, action: Function) -> Result<Value, VmError> {
         let timer = self.start_timer(name).await?;
         let before = Instant::now();
+        let mut guard = ObservationGuard {
+            timer: Some(timer.clone()),
+            before,
+            stop_timer_recipient: self.stop_timer_recipient.clone(),
+        };
         let result = async {
             let value: Value = action.call(()).into_result()?;
             if value.type_hash() == rune::runtime::Future::HASH {
@@ -235,6 +332,7 @@ impl PerformanceRegistry {
             .map(|value| action_outcome(value, 0).unwrap_or(-1))
             .unwrap_or(-1);
         self.stop_timer(timer, before.elapsed(), outcome).await?;
+        guard.timer = None;
         result
     }
 }

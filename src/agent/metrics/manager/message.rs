@@ -21,6 +21,7 @@ pub struct StorageKey {
 }
 
 /// Started action timer identifier and data
+#[derive(Clone)]
 pub struct StartedActionTimer {
     pub(super) id: u32,
     pub(super) key: StorageKey,
