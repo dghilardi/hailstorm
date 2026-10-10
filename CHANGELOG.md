@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Cancel active bot operations on stop and bound actions, callbacks, and shutdown hooks.
 - Distribute bot counts using deterministic agent membership, including replacements that leave the agent count unchanged.
 - Preserve command delivery across gRPC reconnections and apply backpressure instead of dropping queued commands.
 - Aggregate completed action metrics independently, correct histogram units and boundaries, and flush final measurements.

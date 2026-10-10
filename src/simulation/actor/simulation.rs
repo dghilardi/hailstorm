@@ -257,7 +257,10 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                             Some(factory) => {
                                 self.bots.insert(
                                     model.to_string(),
-                                    BotModel::new(self.agent_id, idx as u32, factory),
+                                    BotModel::new(self.agent_id, idx as u32, factory)
+                                        .with_execution_limits(
+                                            self.simulation_params.execution_limits,
+                                        ),
                                 );
                             }
                             None => {
@@ -285,6 +288,10 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                 }
                 SimulationCommand::StopSimulation { reset } => {
                     self.start_ts = None;
+                    self.bots
+                        .values_mut()
+                        .flat_map(BotModel::bots_mut)
+                        .for_each(|bot| bot.stop_bot());
                     if reset {
                         self.bot_registry.reset_script();
                         self.model_shapes.clear();
@@ -301,6 +308,7 @@ pub(crate) enum SimulationState {
     Ready,
     Waiting,
     Running,
+    Stopping,
 }
 
 pub(crate) struct ClientStats {
@@ -328,6 +336,7 @@ impl Handler<FetchSimulationStats> for SimulationActor {
             self.start_ts.as_ref(),
             self.bot_registry.has_registered_models(),
         ) {
+            (None, _) if self.bots.values().any(BotModel::has_bots) => SimulationState::Stopping,
             (_, false) => SimulationState::Idle,
             (None, true) => SimulationState::Ready,
             (Some(ts), true) if *ts < SystemTime::now() => SimulationState::Running,

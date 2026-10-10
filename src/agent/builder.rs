@@ -6,12 +6,14 @@ use crate::communication::server::HailstormGrpcServer;
 use crate::communication::server_actor::GrpcServerActor;
 use crate::communication::upstream::contract::UpstreamAgentActor;
 use crate::communication::upstream::grpc::GrpcUpstreamAgentActor;
+use crate::simulation::actor::bot::BotExecutionLimits;
 use crate::simulation::actor::simulation::SimulationActor;
 use crate::simulation::bot::registry::BotRegistry;
 use actix::{Actor, Addr, AsyncContext, Context};
 use rand::RngCore;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::time::Duration;
 use tonic::transport::Server;
 
 /// Parameters that control how an agent runs its simulations.
@@ -23,9 +25,28 @@ pub struct SimulationParams {
     pub(crate) max_running: Option<usize>,
     /// Maximum number of bots that can be spawned per tick cycle.
     pub(crate) max_rate: Option<usize>,
+    pub(crate) execution_limits: BotExecutionLimits,
 }
 
 impl SimulationParams {
+    /// Limit each bot action and callback (60 seconds by default).
+    pub fn action_timeout(mut self, timeout: Duration) -> Self {
+        self.execution_limits.action_timeout = timeout;
+        self
+    }
+
+    /// Limit a bot's stopping hook (5 seconds by default).
+    pub fn stop_timeout(mut self, timeout: Duration) -> Self {
+        self.execution_limits.stop_timeout = timeout;
+        self
+    }
+
+    /// Limit Rune instructions per action or hook (1,000,000 by default).
+    pub fn instruction_budget(mut self, budget: usize) -> Self {
+        self.execution_limits.instruction_budget = budget;
+        self
+    }
+
     /// Set the maximum number of concurrently running bots.
     pub fn max_running(self, max_running: usize) -> Self {
         Self {

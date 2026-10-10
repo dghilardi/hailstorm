@@ -104,6 +104,13 @@ hs_simulation.running_max=1000
 hs_simulation.rate_max=100
 ```
 
+Bot actions and callbacks default to a 60-second timeout and a 1,000,000 Rune
+instruction budget; stopping hooks have a separate 5-second timeout. Configure
+these limits through `SimulationParams::action_timeout`, `stop_timeout`, and
+`instruction_budget`. Stopping cancels active operations before running the
+stopping hook. Native extensions must yield to the async runtime: blocking
+native code cannot be interrupted by these limits.
+
 Launch one or more agents:
 
 ```sh
