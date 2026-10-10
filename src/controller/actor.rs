@@ -12,7 +12,7 @@ use crate::communication::message::{ControllerCommandMessage, MultiAgentUpdateMe
 use crate::communication::protobuf::grpc;
 use crate::communication::protobuf::grpc::command_item::Command;
 use crate::communication::protobuf::grpc::{
-    AgentUpdate, LaunchCommand, LoadSimCommand, StopCommand,
+    AgentDistribution, AgentUpdate, LaunchCommand, LoadSimCommand, StopCommand,
 };
 use crate::controller::client::downstream::DownstreamClient;
 use crate::controller::message::{LoadSimulation, StartSimulation};
@@ -61,25 +61,22 @@ impl Handler<MultiAgentUpdateMessage> for ControllerActor {
         MultiAgentUpdateMessage(agent_updates): MultiAgentUpdateMessage,
         _ctx: &mut Self::Context,
     ) -> Self::Result {
-        let pre_handle_agents_count = self.count_agents();
+        let pre_handle_agents = self.sorted_agent_ids();
 
         let agent_alignment_fut = self.align_agents_simulation_state(&agent_updates);
         let send_metrics_fut = self
             .metrics_storage
             .send(MultiAgentUpdateMessage(agent_updates));
 
-        let post_handle_agents_count = self.count_agents();
+        let post_handle_agents = self.sorted_agent_ids();
 
-        let cmd_fut = if pre_handle_agents_count != post_handle_agents_count {
+        let cmd_fut = if pre_handle_agents != post_handle_agents {
+            let pre_handle_agents_count = pre_handle_agents.len();
+            let post_handle_agents_count = post_handle_agents.len();
             log::info!(
                 "Update agents count {pre_handle_agents_count} -> {post_handle_agents_count}"
             );
-            Some(
-                self.downstream
-                    .send_broadcast(vec![Command::UpdateAgentsCount(
-                        post_handle_agents_count as u32,
-                    )]),
-            )
+            Some(self.downstream.send_broadcast(self.distribution_commands()))
         } else {
             None
         };
@@ -101,6 +98,21 @@ impl Handler<MultiAgentUpdateMessage> for ControllerActor {
 }
 
 impl ControllerActor {
+    fn sorted_agent_ids(&self) -> Vec<u32> {
+        let mut agent_ids = self.agents_state.keys().copied().collect::<Vec<_>>();
+        agent_ids.sort_unstable();
+        agent_ids
+    }
+
+    fn distribution_commands(&self) -> Vec<Command> {
+        vec![
+            Command::UpdateAgentsCount(self.count_agents() as u32),
+            Command::UpdateAgents(AgentDistribution {
+                agent_ids: self.sorted_agent_ids(),
+            }),
+        ]
+    }
+
     fn count_agents(&self) -> usize {
         self.agents_state.len()
     }
@@ -175,10 +187,16 @@ impl ControllerActor {
             SimulationState::Idle => vec![
                 Command::Stop(StopCommand { reset: true }),
                 Command::UpdateAgentsCount(agents_count as u32),
+                Command::UpdateAgents(AgentDistribution {
+                    agent_ids: self.sorted_agent_ids(),
+                }),
             ],
             SimulationState::Ready { simulation } => vec![
                 Command::Stop(StopCommand { reset: true }),
                 Command::UpdateAgentsCount(agents_count as u32),
+                Command::UpdateAgents(AgentDistribution {
+                    agent_ids: self.sorted_agent_ids(),
+                }),
                 Command::Load(LoadSimCommand {
                     clients_evolution: simulation.bots.iter().cloned().map(Into::into).collect(),
                     script: simulation.script.clone(),
@@ -190,6 +208,9 @@ impl ControllerActor {
             } => vec![
                 Command::Stop(StopCommand { reset: true }),
                 Command::UpdateAgentsCount(agents_count as u32),
+                Command::UpdateAgents(AgentDistribution {
+                    agent_ids: self.sorted_agent_ids(),
+                }),
                 Command::Load(LoadSimCommand {
                     clients_evolution: simulation.bots.iter().cloned().map(Into::into).collect(),
                     script: simulation.script.clone(),
@@ -265,9 +286,10 @@ impl Handler<StartSimulation> for ControllerActor {
 mod test {
     use super::*;
     use crate::communication::message::MultiAgentUpdateMessage;
-    use crate::communication::protobuf::grpc::AgentUpdate;
+    use crate::communication::protobuf::grpc::{AgentUpdate, ControllerCommand};
     use crate::communication::server_actor::GrpcServerActor;
     use actix::{Actor, Context, Handler};
+    use std::sync::{Arc, Mutex};
 
     struct MockMetricsStorage;
     impl Actor for MockMetricsStorage {
@@ -302,5 +324,68 @@ mod test {
         }]);
 
         controller_addr.send(update).await.expect("send failed");
+    }
+
+    struct Capture {
+        commands: Arc<Mutex<Vec<ControllerCommand>>>,
+    }
+
+    impl Actor for Capture {
+        type Context = Context<Self>;
+    }
+
+    impl Handler<ControllerCommandMessage> for Capture {
+        type Result = ();
+
+        fn handle(&mut self, msg: ControllerCommandMessage, _: &mut Self::Context) {
+            self.commands.lock().unwrap().push(msg.0);
+        }
+    }
+
+    impl Handler<MultiAgentUpdateMessage> for Capture {
+        type Result = ();
+
+        fn handle(&mut self, _: MultiAgentUpdateMessage, _: &mut Self::Context) {}
+    }
+
+    #[actix::test]
+    async fn replacing_an_agent_broadcasts_membership_even_when_count_is_unchanged() {
+        let commands = Arc::new(Mutex::new(Vec::new()));
+        let capture = Capture {
+            commands: commands.clone(),
+        }
+        .start();
+        let mut controller = ControllerActor::new(
+            DownstreamClient::new(capture.clone().recipient()),
+            capture.recipient(),
+        );
+        let now = SystemTime::now();
+        for (id, timestamp) in [(0, now - Duration::from_secs(61)), (2, now)] {
+            controller.agents_state.insert(
+                id,
+                AgentState {
+                    timestamp,
+                    state: grpc::AgentSimulationState::Idle,
+                },
+            );
+        }
+        controller
+            .handle(
+                MultiAgentUpdateMessage(vec![AgentUpdate {
+                    agent_id: 4,
+                    timestamp: Some(now.into()),
+                    state: grpc::AgentSimulationState::Idle as i32,
+                    ..Default::default()
+                }]),
+                &mut Context::new(),
+            )
+            .await;
+
+        let commands = commands.lock().unwrap();
+        assert_eq!(commands.len(), 1);
+        assert!(commands[0].commands.iter().any(|item| {
+            matches!(&item.command, Some(Command::UpdateAgents(distribution)) if distribution.agent_ids == vec![2, 4])
+        }));
+        assert_eq!(controller.count_agents(), 2);
     }
 }

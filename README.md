@@ -114,6 +114,12 @@ hs_address=0.0.0.0:50153 zenv -f .env.agent -- ./target/release/examples/agent
 
 ### Multi-level topology
 
+Controllers distribute the sorted agent membership together with the legacy
+agent count. Agents use their unique index in that membership to divide the
+global bot count exactly, even with non-sequential IDs or membership changes.
+Upgrade controllers and agents together: controllers sending only a count
+cannot guarantee this distribution for arbitrary agent IDs.
+
 Agents can connect to other agents instead of the controller directly, enabling deeper distribution:
 
 ```sh

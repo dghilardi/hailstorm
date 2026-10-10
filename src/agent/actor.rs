@@ -264,6 +264,9 @@ impl From<&Command> for Option<SimulationCommand> {
             Command::UpdateAgentsCount(count) => {
                 Some(SimulationCommand::UpdateAgentsCount { count: *count })
             }
+            Command::UpdateAgents(distribution) => Some(SimulationCommand::UpdateAgents {
+                agent_ids: distribution.agent_ids.clone(),
+            }),
             Command::Stop(StopCommand { reset }) => {
                 Some(SimulationCommand::StopSimulation { reset: *reset })
             }

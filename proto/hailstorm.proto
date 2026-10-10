@@ -75,7 +75,13 @@ message CommandItem {
     LaunchCommand launch = 2;
     uint32 updateAgentsCount = 3;
     StopCommand stop = 4;
+    AgentDistribution updateAgents = 5;
   }
+}
+
+message AgentDistribution {
+  // The complete membership used to assign a unique, deterministic index to each agent.
+  repeated uint32 agent_ids = 1;
 }
 
 message MultiAgent {
