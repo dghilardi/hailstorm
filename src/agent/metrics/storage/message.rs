@@ -5,13 +5,13 @@ use std::time::SystemTime;
 /// Histogram-based metrics for a single action outcome.
 ///
 /// The `histogram` array contains 20 logarithmically-spaced buckets tracking
-/// response time distribution. `sum` accumulates the total centiseconds across
+/// response time distribution. `sum` accumulates the total milliseconds across
 /// all observations.
 #[derive(Clone, Default)]
 pub struct Metrics {
-    /// 20-bucket histogram of response times (logarithmic scale, units of 10ms).
+    /// Non-cumulative buckets with upper bounds 10 * 2^index milliseconds; bucket 19 is infinity.
     pub histogram: [u64; 20],
-    /// Sum of all observed values in centiseconds.
+    /// Total observed duration in milliseconds.
     pub sum: u64,
 }
 

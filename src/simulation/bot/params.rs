@@ -5,6 +5,7 @@ use rune::Any;
 /// These fields are accessible from Rune via the `#[rune(get)]` attribute,
 /// allowing scripts to use the bot's identity for logging, storage, etc.
 #[derive(Any)]
+#[rune(item = ::hailstorm::bot)]
 pub struct BotParams {
     /// Sequential bot ID within this model (unique per agent).
     #[rune(get)]

@@ -24,13 +24,13 @@ struct UpstreamConnection {
     #[allow(dead_code)]
     client: HailstormServiceClient<Channel>,
     upd_sender: Sender<AgentMessage>,
-    cmd_sender: Sender<ControllerCommand>,
 }
 
 pub struct GrpcUpstreamAgentActor {
     url: String,
     core_addr: Addr<AgentCoreActor>,
     connection: Option<UpstreamConnection>,
+    cmd_sender: Option<Sender<ControllerCommand>>,
 }
 
 impl Actor for GrpcUpstreamAgentActor {
@@ -38,33 +38,28 @@ impl Actor for GrpcUpstreamAgentActor {
 
     fn started(&mut self, ctx: &mut Self::Context) {
         log::debug!("UpstreamAgentActor started");
-        let connection_req = ctx.address().send(EstablishConnection { attempt: 0 });
+        let (cmd_sender, cmd_receiver) = mpsc::channel(128);
+        self.cmd_sender = Some(cmd_sender);
+        let registration_req = self.core_addr.send(RegisterAgentClientMsg {
+            cmd_receiver,
+            msg_sender: ctx.address().recipient(),
+        });
         ctx.spawn(
-            connection_req
+            registration_req
                 .into_actor(self)
                 .map(|res, _act, _ctx| match res {
-                    Ok(rec_res) => rec_res,
+                    Ok(()) => Ok(()),
                     Err(err) => Err(GrpcConnectionError::Internal(err.to_string())),
                 })
                 .and_then(|_, act, ctx| {
-                    log::debug!("UpstreamAgentActor connected to '{}'", act.url);
-                    let connection = act
-                        .connection
-                        .as_mut()
-                        .expect("Connection needs to be initialized");
-
-                    let (cmd_tx, cmd_rx) = mpsc::channel(128);
-                    connection.cmd_sender = cmd_tx;
-
-                    let send_outcome = act.core_addr.try_send(RegisterAgentClientMsg {
-                        cmd_receiver: cmd_rx,
-                        msg_sender: ctx.address().recipient(),
-                    });
-
-                    if let Err(send_err) = send_outcome {
-                        log::error!("Error sending RegisterAgentClientMsg - {send_err}");
-                    }
-                    ok(())
+                    ctx.address()
+                        .send(EstablishConnection { attempt: 0 })
+                        .into_actor(act)
+                        .map(|res, _, _| {
+                            res.unwrap_or_else(|err| {
+                                Err(GrpcConnectionError::Internal(err.to_string()))
+                            })
+                        })
                 })
                 .map(|res, _act, ctx| match res {
                     Ok(()) => log::debug!("Connection established"),
@@ -90,6 +85,7 @@ impl UpstreamAgentActor for GrpcUpstreamAgentActor {
             url,
             core_addr,
             connection: None,
+            cmd_sender: None,
         })
     }
 }
@@ -135,12 +131,7 @@ impl Handler<EstablishConnection> for GrpcUpstreamAgentActor {
                 |(client, upd_sender, cmd_stream): (_, _, Streaming<ControllerCommand>),
                  act,
                  ctx| {
-                    let (cmd_tx, _cmd_rx) = mpsc::channel(1);
-                    act.connection = Some(UpstreamConnection {
-                        client,
-                        upd_sender,
-                        cmd_sender: cmd_tx,
-                    });
+                    act.connection = Some(UpstreamConnection { client, upd_sender });
                     ctx.add_stream(cmd_stream.filter_map(|result| {
                         ready(match result {
                             Ok(cmd) => Some(cmd),
@@ -167,7 +158,7 @@ impl Handler<EstablishConnection> for GrpcUpstreamAgentActor {
                         .await;
                         address
                             .send(EstablishConnection {
-                                attempt: msg.attempt + 1,
+                                attempt: msg.attempt.saturating_add(1),
                             })
                             .await
                             .map_err(|err| GrpcConnectionError::Internal(err.to_string()))?
@@ -211,12 +202,17 @@ impl Handler<SendAgentMessage> for GrpcUpstreamAgentActor {
 }
 
 impl StreamHandler<ControllerCommand> for GrpcUpstreamAgentActor {
-    fn handle(&mut self, item: ControllerCommand, _ctx: &mut Self::Context) {
-        if let Some(connection) = self.connection.as_ref() {
-            let out = connection.cmd_sender.try_send(item);
-            if let Err(err) = out {
-                log::error!("Error sending command to actor - {err}");
-            }
+    fn handle(&mut self, item: ControllerCommand, ctx: &mut Self::Context) {
+        if let Some(sender) = self.cmd_sender.clone() {
+            // Pause stream polling while the core catches up instead of dropping commands.
+            ctx.wait(
+                async move {
+                    if let Err(err) = sender.send(item).await {
+                        log::error!("Error sending command to actor - {err}");
+                    }
+                }
+                .into_actor(self),
+            );
         } else {
             log::warn!("Connection is not initialized");
         }
@@ -228,6 +224,7 @@ impl StreamHandler<ControllerCommand> for GrpcUpstreamAgentActor {
 
     fn finished(&mut self, ctx: &mut Self::Context) {
         log::debug!("Command stream for '{}' finished", self.url);
+        self.connection = None;
         if ctx.state().alive() {
             let reconnection_req = ctx.address().send(EstablishConnection { attempt: 0 });
             ctx.spawn(
@@ -247,6 +244,19 @@ impl StreamHandler<ControllerCommand> for GrpcUpstreamAgentActor {
                         }
                     }),
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backoff_is_capped_without_overflow() {
+        let cap = Duration::from_secs(300);
+        for attempt in [9, 31, 32, 63, 64, u32::MAX] {
+            assert_eq!(truncated_exponential_backoff(attempt, cap), cap);
         }
     }
 }

@@ -1,4 +1,5 @@
-use crate::simulation::actor::bot::{BotActor, BotState, ExecuteHandler, StopBot, TriggerHook};
+use crate::simulation::actor::bot::BotExecutionLimits;
+use crate::simulation::actor::bot::{BotActor, BotState, ExecuteHandler, TriggerHook};
 use crate::simulation::actor::simulation::BotStateChange;
 use crate::simulation::bot::model_factory::BotModelFactory;
 use crate::simulation::compound_id::CompoundId;
@@ -12,16 +13,13 @@ use std::collections::HashMap;
 pub struct SimulationBot {
     state: BotState,
     addr: Addr<BotActor>,
+    stop_requested: tokio::sync::watch::Sender<bool>,
 }
 
 impl SimulationBot {
     pub fn stop_bot(&mut self) {
-        let send_outcome = self.addr.try_send(StopBot);
-        if let Err(err) = send_outcome {
-            log::error!("Error stopping bot - {}", err);
-        } else {
-            self.state = BotState::Stopping;
-        }
+        self.stop_requested.send_replace(true);
+        self.state = BotState::Stopping;
     }
 
     pub fn execute_handler(&self, id: Hash, args: OwnedValue) -> Request<BotActor, ExecuteHandler> {
@@ -48,6 +46,7 @@ pub struct BotModel {
     id_generator: SequentialIdGenerator,
     bot_factory: BotModelFactory,
     bots: HashMap<u64, SimulationBot>,
+    execution_limits: BotExecutionLimits,
 }
 
 impl BotModel {
@@ -58,7 +57,13 @@ impl BotModel {
             bot_factory: factory,
             id_generator: Default::default(),
             bots: Default::default(),
+            execution_limits: BotExecutionLimits::default(),
         }
+    }
+
+    pub(crate) fn with_execution_limits(mut self, limits: BotExecutionLimits) -> Self {
+        self.execution_limits = limits;
+        self
     }
 
     pub fn spawn_bot<A>(&mut self, addr: Addr<A>)
@@ -71,11 +76,17 @@ impl BotModel {
 
         match self.bot_factory.new_bot(compound_id) {
             Some(bot_behaviour) => {
+                let (stop_requested, stop_receiver) = tokio::sync::watch::channel(false);
+                let limits = self.execution_limits;
                 self.bots.insert(
                     internal_id,
                     SimulationBot {
                         state: BotState::Running,
-                        addr: BotActor::create(|_| BotActor::new(internal_id, addr, bot_behaviour)),
+                        addr: BotActor::create(|_| {
+                            BotActor::new(internal_id, addr, bot_behaviour)
+                                .with_control(limits, stop_receiver)
+                        }),
+                        stop_requested,
                     },
                 );
             }
@@ -102,6 +113,10 @@ impl BotModel {
             .iter()
             .filter(|(_id, bot)| bot.state != BotState::Stopping)
             .count()
+    }
+
+    pub(crate) fn has_bots(&self) -> bool {
+        !self.bots.is_empty()
     }
 
     pub fn retain<F>(&mut self, mut condition: F)

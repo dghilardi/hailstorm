@@ -2,6 +2,7 @@ use crate::simulation::actor::bot;
 use rune::Any;
 
 #[derive(Any, Debug)]
+#[rune(item = ::hailstorm::bot)]
 pub enum BotState {
     #[rune(constructor)]
     Initializing,

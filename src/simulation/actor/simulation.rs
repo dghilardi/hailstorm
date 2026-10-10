@@ -23,6 +23,7 @@ pub struct SimulationActor {
     start_ts: Option<SystemTime>,
     bot_registry: BotRegistry,
     agents_count: u32,
+    agent_index: Option<u32>,
     model_shapes: HashMap<String, Box<dyn Fn(f64) -> f64>>,
     bots: HashMap<String, BotModel>,
 }
@@ -47,6 +48,7 @@ impl SimulationActor {
             start_ts: None,
             bot_registry,
             agents_count: 1,
+            agent_index: Some(0),
             model_shapes: Default::default(),
             bots: Default::default(),
         }
@@ -60,9 +62,27 @@ impl SimulationActor {
         Ok(())
     }
 
-    fn normalize_count(global_count: f64, agent_id: u32, agents_count: u32) -> usize {
-        let shift = (agent_id % agents_count) as f64 / agents_count as f64;
-        ((global_count / agents_count as f64) + shift).floor() as usize
+    fn normalize_count(global_count: f64, agent_index: u32, agents_count: u32) -> usize {
+        if !global_count.is_finite()
+            || global_count < 0.0
+            || agents_count == 0
+            || agent_index >= agents_count
+        {
+            return 0;
+        }
+        let count = global_count.floor() as usize;
+        let agents_count = agents_count as usize;
+        count / agents_count + usize::from((agent_index as usize) < count % agents_count)
+    }
+
+    fn update_agents(&mut self, mut agent_ids: Vec<u32>) {
+        agent_ids.sort_unstable();
+        agent_ids.dedup();
+        self.agents_count = agent_ids.len() as u32;
+        self.agent_index = agent_ids
+            .binary_search(&self.agent_id)
+            .ok()
+            .map(|index| index as u32);
     }
 
     fn tick(&mut self, ctx: &mut Context<Self>) {
@@ -80,7 +100,9 @@ impl SimulationActor {
             for (model_name, shape) in self.model_shapes.iter() {
                 let shape_val = shape(elapsed);
                 let count = match (
-                    Self::normalize_count(shape_val, self.agent_id, self.agents_count),
+                    self.agent_index
+                        .map(|index| Self::normalize_count(shape_val, index, self.agents_count))
+                        .unwrap_or(0),
                     self.simulation_params.max_running,
                 ) {
                     (normalized_count, Some(max_running)) => min(normalized_count, max_running),
@@ -188,6 +210,10 @@ pub(crate) enum SimulationCommand {
     UpdateAgentsCount {
         count: u32,
     },
+    /// Update the complete membership used to distribute bot counts.
+    UpdateAgents {
+        agent_ids: Vec<u32>,
+    },
     /// Stop the simulation, optionally resetting all state.
     StopSimulation {
         reset: bool,
@@ -231,7 +257,10 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                             Some(factory) => {
                                 self.bots.insert(
                                     model.to_string(),
-                                    BotModel::new(self.agent_id, idx as u32, factory),
+                                    BotModel::new(self.agent_id, idx as u32, factory)
+                                        .with_execution_limits(
+                                            self.simulation_params.execution_limits,
+                                        ),
                                 );
                             }
                             None => {
@@ -250,9 +279,19 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                         log::warn!("Received agents_count = 0. setting it to 1");
                         self.agents_count = 1;
                     }
+                    // Compatibility with controllers that only send a count. Modern controllers
+                    // follow this command with the complete membership, replacing this fallback.
+                    self.agent_index = Some(self.agent_id % self.agents_count);
+                }
+                SimulationCommand::UpdateAgents { agent_ids } => {
+                    self.update_agents(agent_ids);
                 }
                 SimulationCommand::StopSimulation { reset } => {
                     self.start_ts = None;
+                    self.bots
+                        .values_mut()
+                        .flat_map(BotModel::bots_mut)
+                        .for_each(|bot| bot.stop_bot());
                     if reset {
                         self.bot_registry.reset_script();
                         self.model_shapes.clear();
@@ -269,6 +308,7 @@ pub(crate) enum SimulationState {
     Ready,
     Waiting,
     Running,
+    Stopping,
 }
 
 pub(crate) struct ClientStats {
@@ -296,6 +336,7 @@ impl Handler<FetchSimulationStats> for SimulationActor {
             self.start_ts.as_ref(),
             self.bot_registry.has_registered_models(),
         ) {
+            (None, _) if self.bots.values().any(BotModel::has_bots) => SimulationState::Stopping,
             (_, false) => SimulationState::Idle,
             (None, true) => SimulationState::Ready,
             (Some(ts), true) if *ts < SystemTime::now() => SimulationState::Running,
@@ -365,35 +406,91 @@ impl Handler<InvokeHandler> for SimulationActor {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+    use crate::agent::metrics::manager::actor::MetricsManagerActor;
     use crate::simulation::actor::simulation::SimulationActor;
+    use actix::Actor;
+
+    fn simulation(agent_id: u32) -> SimulationActor {
+        let registry = BotRegistry::new(
+            rune::Context::with_default_modules().unwrap(),
+            MetricsManagerActor::start_default(),
+        )
+        .unwrap();
+        SimulationActor::new(agent_id, SimulationParams::default(), registry)
+    }
+
+    #[actix::test]
+    async fn arbitrary_ids_receive_unique_indices_and_preserve_total_load() {
+        for ids in [vec![0, 2], vec![1, 3], vec![77, 1000, u32::MAX]] {
+            let mut total = 0;
+            for (index, id) in ids.iter().enumerate() {
+                let mut simulation = simulation(*id);
+                simulation.update_agents(ids.iter().rev().copied().collect());
+                assert_eq!(simulation.agent_index, Some(index as u32));
+                total += SimulationActor::normalize_count(
+                    7.0,
+                    simulation.agent_index.unwrap(),
+                    simulation.agents_count,
+                );
+            }
+            assert_eq!(total, 7);
+        }
+    }
+
+    #[actix::test]
+    async fn membership_deduplicates_ids_and_excludes_removed_agents() {
+        let mut simulation = simulation(3);
+        simulation.update_agents(vec![3, 1, 3]);
+        assert_eq!(simulation.agents_count, 2);
+        assert_eq!(simulation.agent_index, Some(1));
+        simulation.update_agents(vec![1, 5]);
+        assert_eq!(simulation.agent_index, None);
+        simulation.update_agents(vec![]);
+        assert_eq!(simulation.agents_count, 0);
+        assert_eq!(simulation.agent_index, None);
+    }
 
     #[test]
     fn normalize_count_distributes_evenly() {
-        let agents_count = 13;
-        for n in 0..100 {
-            let sum: usize = (0..agents_count)
-                .map(|agent_id| SimulationActor::normalize_count(n as f64, agent_id, agents_count))
-                .sum();
-            // The sum across all agents should approximate the global count
-            assert!(
-                (sum as i64 - n as i64).unsigned_abs() <= agents_count as u64,
-                "n={n}, sum={sum}, agents={agents_count}: distribution too uneven"
-            );
+        for agents_count in 1..=16 {
+            for n in 0..100 {
+                let counts = (0..agents_count)
+                    .map(|index| {
+                        SimulationActor::normalize_count(n as f64 + 0.75, index, agents_count)
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(counts.iter().sum::<usize>(), n);
+                assert!(counts.iter().max().unwrap() - counts.iter().min().unwrap() <= 1);
+            }
         }
     }
 
     #[test]
+    fn normalization_assigns_the_remainder_to_distinct_indices() {
+        assert_eq!(SimulationActor::normalize_count(3.0, 0, 2), 2);
+        assert_eq!(SimulationActor::normalize_count(3.0, 1, 2), 1);
+    }
+
+    #[test]
+    fn invalid_shapes_or_assignments_do_not_spawn_bots() {
+        for count in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(SimulationActor::normalize_count(count, 0, 1), 0);
+        }
+        assert_eq!(SimulationActor::normalize_count(100.0, 0, 0), 0);
+        assert_eq!(SimulationActor::normalize_count(100.0, 2, 2), 0);
+    }
+
+    #[test]
     fn normalize_count_single_agent() {
-        // With a single agent, it should get the full count
         assert_eq!(SimulationActor::normalize_count(10.0, 0, 1), 10);
         assert_eq!(SimulationActor::normalize_count(0.0, 0, 1), 0);
     }
 
     #[test]
     fn normalize_count_zero_bots() {
-        // When global count is zero, no agent should get any bots
-        for agent_id in 0..5 {
-            assert_eq!(SimulationActor::normalize_count(0.0, agent_id, 5), 0);
+        for agent_index in 0..5 {
+            assert_eq!(SimulationActor::normalize_count(0.0, agent_index, 5), 0);
         }
     }
 }

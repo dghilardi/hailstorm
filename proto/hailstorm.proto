@@ -42,7 +42,9 @@ message PerformanceSnapshot {
 
 message PerformanceHistogram {
   int64 status = 1;
+  // Non-cumulative buckets: 10 * 2^index milliseconds, with bucket 19 representing +Inf.
   repeated uint64 buckets = 2;
+  // Total observed duration in milliseconds.
   uint64 sum = 3;
 }
 
@@ -73,7 +75,13 @@ message CommandItem {
     LaunchCommand launch = 2;
     uint32 updateAgentsCount = 3;
     StopCommand stop = 4;
+    AgentDistribution updateAgents = 5;
   }
+}
+
+message AgentDistribution {
+  // The complete membership used to assign a unique, deterministic index to each agent.
+  repeated uint32 agent_ids = 1;
 }
 
 message MultiAgent {

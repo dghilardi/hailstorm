@@ -24,6 +24,10 @@ impl ScriptedBot {
         self.behaviour.get_interval()
     }
 
+    pub(crate) fn reset_execution(&mut self) {
+        self.vm.clear();
+    }
+
     pub async fn run_random_action(&mut self) -> Result<(), VmError> {
         let action_hash = self.behaviour.random_action();
         let _result: rune::Value = self

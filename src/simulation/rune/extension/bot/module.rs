@@ -13,12 +13,22 @@ pub fn module() -> Result<Module, ContextError> {
     module.associated_function("set_interval_millis", BotBehaviour::set_interval_millis)?;
 
     module.ty::<ActionTrigger>()?;
-    module.function("alive", |weight: f32| ActionTrigger::Alive { weight }).build()?;
-    module.function("enter_state", |state: BotState| {
-        ActionTrigger::EnterState {
+    module
+        .function("alive", |weight: f32| ActionTrigger::Alive { weight })
+        .build()?;
+    module
+        .function("alive", |weight: f32| ActionTrigger::Alive { weight })
+        .build_associated::<ActionTrigger>()?;
+    module
+        .function("enter_state", |state: BotState| ActionTrigger::EnterState {
             state: state.into(),
-        }
-    }).build()?;
+        })
+        .build()?;
+    module
+        .function("enter_state", |state: BotState| ActionTrigger::EnterState {
+            state: state.into(),
+        })
+        .build_associated::<ActionTrigger>()?;
 
     module.ty::<BotState>()?;
 

@@ -232,6 +232,30 @@ mod test {
     use super::*;
     use crate::agent::metrics::manager::actor::MetricsManagerActor;
 
+    #[actix::test]
+    async fn legacy_action_trigger_constructors_remain_available() {
+        let mut registry = BotRegistry::new(
+            Context::with_default_modules().unwrap(),
+            MetricsManagerActor::start_default(),
+        )
+        .unwrap();
+        registry.load_script(r#"
+            use hailstorm::bot::{ActionTrigger, BotState};
+            struct Bot;
+            impl Bot {
+                pub fn new(args) { Self }
+                pub fn register_bot(bot) {
+                    bot.register_action(ActionTrigger::alive(1.0), Self::action);
+                    bot.register_action(ActionTrigger::enter_state(BotState::Stopping), Self::action);
+                    bot.register_action(hailstorm::bot::alive(1.0), Self::action);
+                    bot.register_action(hailstorm::bot::enter_state(BotState::Running), Self::action);
+                }
+                pub async fn action(self) { () }
+            }
+        "#).unwrap();
+        assert_eq!(registry.count_bot_models(), 1);
+    }
+
     const MINIMAL_VALID_SCRIPT: &str = r#"
             struct Util {}
             struct Demo { id }

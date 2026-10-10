@@ -77,6 +77,16 @@ impl Hailstone {
 
 ### Controller setup
 
+Scripts can use `ActionTrigger::alive`, `ActionTrigger::enter_state` and
+`PerformanceRegistry::new` through their `hailstorm::bot` and
+`hailstorm::metrics` type paths. The module-level aliases introduced in 0.3.0
+remain available. Call `perf.observe("action", callback).await` to time either a
+synchronous or asynchronous callback; it returns the original response and
+records the completed outcome, including errors. Cancelled observations are
+finalized with outcome `-2`; execution errors use `-1`. Actor callbacks preserve
+objects, lists, tuples, bytes, and nested option/result values when transferring
+data. Unsupported native values or cyclic/deeply nested payloads return errors.
+
 ```sh
 # .env.controller
 hs_address="0.0.0.0:50051"
@@ -97,6 +107,13 @@ hs_simulation.running_max=1000
 hs_simulation.rate_max=100
 ```
 
+Bot actions and callbacks default to a 60-second timeout and a 1,000,000 Rune
+instruction budget; stopping hooks have a separate 5-second timeout. Configure
+these limits through `SimulationParams::action_timeout`, `stop_timeout`, and
+`instruction_budget`. Stopping cancels active operations before running the
+stopping hook. Native extensions must yield to the async runtime: blocking
+native code cannot be interrupted by these limits.
+
 Launch one or more agents:
 
 ```sh
@@ -106,6 +123,12 @@ hs_address=0.0.0.0:50153 zenv -f .env.agent -- ./target/release/examples/agent
 ```
 
 ### Multi-level topology
+
+Controllers distribute the sorted agent membership together with the legacy
+agent count. Agents use their unique index in that membership to divide the
+global bot count exactly, even with non-sequential IDs or membership changes.
+Upgrade controllers and agents together: controllers sending only a count
+cannot guarantee this distribution for arbitrary agent IDs.
 
 Agents can connect to other agents instead of the controller directly, enabling deeper distribution:
 

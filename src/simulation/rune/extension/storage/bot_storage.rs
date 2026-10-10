@@ -3,6 +3,7 @@ use rune::Any;
 use std::collections::HashMap;
 
 #[derive(Any)]
+#[rune(item = ::hailstorm::storage)]
 pub struct BotStorage {
     init: HashMap<String, String>,
     storage: StorageSlice,

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Preserve structured actor payloads after the Rune migration and reject unsupported values instead of silently replacing them with unit.
+- Finalize cancelled action observations without leaving pending timers or duplicating completed measurements.
+- Cancel active bot operations on stop and bound actions, callbacks, and shutdown hooks.
+- Distribute bot counts using deterministic agent membership, including replacements that leave the agent count unchanged.
+- Preserve command delivery across gRPC reconnections and apply backpressure instead of dropping queued commands.
+- Aggregate completed action metrics independently, correct histogram units and boundaries, and flush final measurements.
+- Restore asynchronous action measurements after the Rune 0.14 migration, preserving callback results and errors.
+- Restore Rune script type paths and constructors while retaining the 0.3 module-level aliases.
+
 ## [0.3.0] 2026-03-29
 ### Changed (dependencies)
 - Upgrade rune 0.12 -> 0.14, rune-modules 0.12 -> 0.14 (major API migration)
