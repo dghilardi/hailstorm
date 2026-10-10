@@ -77,6 +77,13 @@ impl Hailstone {
 
 ### Controller setup
 
+Scripts can use `ActionTrigger::alive`, `ActionTrigger::enter_state` and
+`PerformanceRegistry::new` through their `hailstorm::bot` and
+`hailstorm::metrics` type paths. The module-level aliases introduced in 0.3.0
+remain available. Call `perf.observe("action", callback).await` to time either a
+synchronous or asynchronous callback; it returns the original response and
+records the completed outcome, including errors.
+
 ```sh
 # .env.controller
 hs_address="0.0.0.0:50051"
