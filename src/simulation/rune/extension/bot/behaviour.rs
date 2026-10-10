@@ -10,6 +10,7 @@ use std::time::Duration;
 /// Populated by the `register_bot` function in a Rune script. Actions are selected
 /// randomly based on their weights; hooks fire when the bot enters a specific state.
 #[derive(Clone, Debug, Any)]
+#[rune(item = ::hailstorm::bot)]
 pub struct BotBehaviour {
     total_weight: f64,
     interval: Duration,
@@ -19,6 +20,7 @@ pub struct BotBehaviour {
 
 /// Determines when a registered action should be triggered.
 #[derive(Clone, Debug, Any)]
+#[rune(item = ::hailstorm::bot)]
 pub enum ActionTrigger {
     /// Triggered periodically while the bot is alive, with the given weight for random selection.
     Alive { weight: f32 },

@@ -171,7 +171,7 @@ mod test {
         let script = r#"
         pub fn main() {
             let storage = hailstorm::storage::get_bot_storage("bot_data", 13);
-            storage.read("name")
+            hailstorm::storage::BotStorage::read(storage, "name")
         }
         "#;
 

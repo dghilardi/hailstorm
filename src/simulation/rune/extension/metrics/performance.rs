@@ -10,6 +10,7 @@ use crate::agent::metrics::timer::{ActionOutcome, ExecutionInfo};
 use crate::simulation::rune::types::value::OwnedValue;
 
 #[derive(Any)]
+#[rune(item = ::hailstorm::metrics)]
 pub struct PerformanceRegistry {
     model: String,
     start_timer_recipient: Recipient<StartActionTimer>,
