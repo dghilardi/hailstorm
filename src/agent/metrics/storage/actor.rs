@@ -1,4 +1,4 @@
-use super::super::timer::Timer;
+use super::super::timer::ExecutionInfo;
 use crate::agent::metrics::storage::message::{
     FetchMetrics, MetricsFamily, MetricsFamilySnapshot, StartTimer, StartedTimer, StopTimer,
 };
@@ -7,11 +7,9 @@ use lazy_static::lazy_static;
 use ringbuf::traits::{Consumer, Observer, Producer, Split};
 use ringbuf::HeapRb;
 use std::cmp::min;
-use std::collections::BTreeMap;
-use std::ops::{Add, Div};
+use std::collections::{BTreeMap, HashSet};
+use std::ops::Add;
 use std::time::{Duration, SystemTime};
-use time::format_description::well_known::Rfc3339;
-use time::OffsetDateTime;
 
 pub(super) struct MFSnapshotStorage {
     last_snapshot: Option<SystemTime>,
@@ -33,6 +31,9 @@ impl Default for MFSnapshotStorage {
 
 impl MFSnapshotStorage {
     pub fn add_snapshot(&mut self, timestamp: SystemTime, metrics: MetricsFamily) {
+        if self.buf_producer.is_full() {
+            self.buf_consumer.try_pop();
+        }
         let out = self
             .buf_producer
             .try_push(MetricsFamilySnapshot { timestamp, metrics });
@@ -56,7 +57,9 @@ impl MFSnapshotStorage {
 pub struct MetricsStorageActor {
     snapshots: MFSnapshotStorage,
     histogram: MetricsFamily,
-    pending: BTreeMap<SystemTime, Vec<Timer>>,
+    histogram_dirty: bool,
+    pending: BTreeMap<SystemTime, HashSet<u32>>,
+    next_timer_id: u32,
 }
 
 impl Actor for MetricsStorageActor {
@@ -76,48 +79,50 @@ lazy_static! {
 }
 
 impl MetricsStorageActor {
-    fn get_timer_mut(&mut self, ts: SystemTime, id: u32) -> Option<&mut Timer> {
-        self.pending
-            .get_mut(&ts)
-            .and_then(|v| v.iter_mut().find(|t| id.eq(&t.get_id())))
+    fn remove_timer(&mut self, ts: SystemTime, id: u32) -> bool {
+        if let Some(timers) = self.pending.get_mut(&ts) {
+            let removed = timers.remove(&id);
+            if timers.is_empty() {
+                self.pending.remove(&ts);
+            }
+            removed
+        } else {
+            false
+        }
     }
 
-    fn process_pending(&mut self) {
-        let mut fst_incomplete_ts: Option<SystemTime> = None;
+    fn expire_pending(&mut self, now: SystemTime) {
         self.pending.retain(|ts, timers| {
-            if fst_incomplete_ts.map(|fst_ts| fst_ts > *ts).unwrap_or(true) {
-                if ts.add(Duration::from_secs(3600)) > SystemTime::now()
-                    && timers.iter().any(|t| t.get_execution().is_none())
-                {
-                    fst_incomplete_ts = Some(*ts);
-                    true
-                } else {
-                    for timer in timers {
-                        if let Some(execution) = timer.get_execution() {
-                            let status = self.histogram.entry(execution.outcome).or_default();
-                            let cs = execution.elapsed.as_millis().div(10) as u64;
-                            let idx = compute_bucket_idx(cs);
-
-                            status.histogram[idx] += 1;
-                            status.sum += cs;
-                        } else {
-                            log::warn!(
-                                "dropping pending timer '{}'",
-                                OffsetDateTime::from(*ts)
-                                    .format(&Rfc3339)
-                                    .unwrap_or_default()
-                            );
-                        }
-                    }
-                    if self.snapshots.is_elapsed(*HIST_MAX_RES, *ts) {
-                        self.snapshots.add_snapshot(*ts, self.histogram.clone());
-                    }
-                    false
-                }
-            } else {
+            if ts.add(Duration::from_secs(3600)) > now {
                 true
+            } else {
+                log::warn!("dropping {} expired timers at {ts:?}", timers.len());
+                false
             }
         });
+    }
+
+    fn record_execution(&mut self, execution: ExecutionInfo) {
+        // Use the exact duration for bucket selection; exported sums are milliseconds.
+        let bucket_units = (execution.elapsed.as_nanos() + 9_999_999) / 10_000_000;
+        let idx = compute_bucket_idx(bucket_units.min(u64::MAX as u128) as u64);
+        let status = self.histogram.entry(execution.outcome).or_default();
+        status.histogram[idx] += 1;
+        status.sum += execution.elapsed.as_millis().min(u64::MAX as u128) as u64;
+        self.histogram_dirty = true;
+
+        let now = SystemTime::now();
+        if self.snapshots.is_elapsed(*HIST_MAX_RES, now) {
+            self.flush_snapshot(now);
+        }
+    }
+
+    fn flush_snapshot(&mut self, timestamp: SystemTime) {
+        if self.histogram_dirty {
+            self.snapshots
+                .add_snapshot(timestamp, self.histogram.clone());
+            self.histogram_dirty = false;
+        }
     }
 }
 
@@ -134,8 +139,11 @@ impl Handler<StartTimer> for MetricsStorageActor {
     fn handle(&mut self, _: StartTimer, _ctx: &mut Self::Context) -> Self::Result {
         let now = SystemTime::now();
         let timers = self.pending.entry(now).or_default();
-        let timer_id = timers.len() as u32;
-        timers.push(Timer::empty(timer_id));
+        let mut timer_id = self.next_timer_id;
+        while !timers.insert(timer_id) {
+            timer_id = timer_id.wrapping_add(1);
+        }
+        self.next_timer_id = timer_id.wrapping_add(1);
         MessageResult(StartedTimer {
             id: timer_id,
             timestamp: now,
@@ -147,9 +155,8 @@ impl Handler<StopTimer> for MetricsStorageActor {
     type Result = ();
 
     fn handle(&mut self, msg: StopTimer, _ctx: &mut Self::Context) -> Self::Result {
-        if let Some(timer) = self.get_timer_mut(msg.timer.timestamp, msg.timer.id) {
-            timer.set_execution(msg.execution.elapsed, msg.execution.outcome);
-            self.process_pending();
+        if self.remove_timer(msg.timer.timestamp, msg.timer.id) {
+            self.record_execution(msg.execution);
         } else {
             log::error!(
                 "No timer found with ts {:?} and id {}",
@@ -164,6 +171,9 @@ impl Handler<FetchMetrics> for MetricsStorageActor {
     type Result = MessageResult<FetchMetrics>;
 
     fn handle(&mut self, _msg: FetchMetrics, _ctx: &mut Self::Context) -> Self::Result {
+        let now = SystemTime::now();
+        self.expire_pending(now);
+        self.flush_snapshot(now);
         let mut res = Vec::with_capacity(self.snapshots.buf_consumer.occupied_len());
         while let Some(snapshot) = self.snapshots.buf_consumer.try_pop() {
             res.push(snapshot)
@@ -174,7 +184,9 @@ impl Handler<FetchMetrics> for MetricsStorageActor {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::agent::metrics::storage::actor::compute_bucket_idx;
+    use crate::agent::metrics::timer::ExecutionInfo;
 
     #[test]
     fn test_compute_bucket_idx() {
@@ -186,5 +198,144 @@ mod test {
                 "v = {v}, idx = {idx}"
             );
         }
+    }
+
+    #[test]
+    fn a_full_snapshot_buffer_retains_the_newest_measurements() {
+        let mut storage = MFSnapshotStorage::default();
+        let origin = SystemTime::now();
+        for offset in 0..61 {
+            storage.add_snapshot(
+                origin + Duration::from_secs(offset),
+                MetricsFamily::default(),
+            );
+        }
+        assert_eq!(storage.buf_consumer.occupied_len(), 60);
+        assert_eq!(
+            storage.buf_consumer.try_pop().unwrap().timestamp,
+            origin + Duration::from_secs(1)
+        );
+        let mut last = None;
+        while let Some(snapshot) = storage.buf_consumer.try_pop() {
+            last = Some(snapshot.timestamp);
+        }
+        assert_eq!(last, Some(origin + Duration::from_secs(60)));
+    }
+
+    #[actix::test]
+    async fn completed_measurements_do_not_wait_for_unfinished_timers() {
+        let storage = MetricsStorageActor::start_default();
+        let _unfinished = storage.send(StartTimer).await.unwrap();
+        let timer = storage.send(StartTimer).await.unwrap();
+        storage
+            .send(StopTimer {
+                timer,
+                execution: ExecutionInfo {
+                    elapsed: Duration::from_millis(19),
+                    outcome: 0,
+                },
+            })
+            .await
+            .unwrap();
+
+        let snapshots = storage.send(FetchMetrics).await.unwrap();
+        let metrics = &snapshots
+            .last()
+            .expect("completed measurement must be published")
+            .metrics[&0];
+        assert_eq!(metrics.sum, 19);
+        assert_eq!(metrics.histogram[1], 1);
+        assert_eq!(metrics.histogram.iter().sum::<u64>(), 1);
+    }
+
+    #[actix::test]
+    async fn fetching_flushes_measurements_after_the_last_snapshot() {
+        let storage = MetricsStorageActor::start_default();
+        for count in 1..=2 {
+            let timer = storage.send(StartTimer).await.unwrap();
+            storage
+                .send(StopTimer {
+                    timer,
+                    execution: ExecutionInfo {
+                        elapsed: Duration::from_millis(100),
+                        outcome: 0,
+                    },
+                })
+                .await
+                .unwrap();
+            let snapshots = storage.send(FetchMetrics).await.unwrap();
+            let metrics = &snapshots
+                .last()
+                .expect("final measurements must be flushed")
+                .metrics[&0];
+            assert_eq!(metrics.sum, count * 100);
+            assert_eq!(metrics.histogram.iter().sum::<u64>(), count);
+        }
+        assert!(storage.send(FetchMetrics).await.unwrap().is_empty());
+    }
+
+    #[actix::test]
+    async fn histogram_boundaries_include_only_durations_below_the_limit() {
+        let storage = MetricsStorageActor::start_default();
+        for elapsed in [
+            Duration::ZERO,
+            Duration::from_millis(10),
+            Duration::from_micros(10_001),
+            Duration::from_millis(20),
+            Duration::from_millis(21),
+        ] {
+            let timer = storage.send(StartTimer).await.unwrap();
+            storage
+                .send(StopTimer {
+                    timer,
+                    execution: ExecutionInfo {
+                        elapsed,
+                        outcome: 0,
+                    },
+                })
+                .await
+                .unwrap();
+        }
+        let snapshots = storage.send(FetchMetrics).await.unwrap();
+        let metrics = &snapshots.last().unwrap().metrics[&0];
+        assert_eq!(&metrics.histogram[..3], &[2, 2, 1]);
+        assert_eq!(metrics.sum, 61);
+    }
+
+    #[actix::test]
+    async fn duplicate_completions_do_not_count_the_same_timer_twice() {
+        let storage = MetricsStorageActor::start_default();
+        let timer = storage.send(StartTimer).await.unwrap();
+        for _ in 0..2 {
+            storage
+                .send(StopTimer {
+                    timer: StartedTimer {
+                        id: timer.id,
+                        timestamp: timer.timestamp,
+                    },
+                    execution: ExecutionInfo {
+                        elapsed: Duration::from_millis(100),
+                        outcome: 0,
+                    },
+                })
+                .await
+                .unwrap();
+        }
+        let snapshots = storage.send(FetchMetrics).await.unwrap();
+        let metrics = &snapshots.last().unwrap().metrics[&0];
+        assert_eq!(metrics.sum, 100);
+        assert_eq!(metrics.histogram.iter().sum::<u64>(), 1);
+    }
+
+    #[test]
+    fn expiration_keeps_recent_timers() {
+        let now = SystemTime::now();
+        let expired = now - Duration::from_secs(3601);
+        let mut storage = MetricsStorageActor::default();
+        storage.pending.insert(expired, [1].into_iter().collect());
+        storage.pending.insert(now, [2].into_iter().collect());
+        storage.expire_pending(now);
+        assert!(!storage.pending.contains_key(&expired));
+        assert_eq!(storage.pending[&now].len(), 1);
     }
 }

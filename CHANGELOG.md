@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Aggregate completed action metrics independently, correct histogram units and boundaries, and flush final measurements.
 - Restore asynchronous action measurements after the Rune 0.14 migration, preserving callback results and errors.
 - Restore Rune script type paths and constructors while retaining the 0.3 module-level aliases.
 
