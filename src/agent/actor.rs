@@ -125,7 +125,8 @@ impl AgentCoreActor {
                         timestamp: Some(SystemTime::now().into()),
                         name: "".to_string(),
                         state: state as i32,
-                        simulation_id: "".to_string(),
+                        simulation_id: in_stats.simulation_id,
+                        simulation_error: in_stats.simulation_error.unwrap_or_default(),
                     }]))
                     .unwrap_or_else(|err| {
                         log::error!("Error sending agent stats to notifier actor {err}");
@@ -244,6 +245,7 @@ impl From<&Command> for Option<SimulationCommand> {
     fn from(cmd: &Command) -> Self {
         match cmd {
             Command::Load(load) => Some(SimulationCommand::LoadSimulation {
+                simulation_id: load.simulation_id.clone(),
                 model_shapes: load
                     .clients_evolution
                     .iter()

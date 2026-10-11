@@ -200,6 +200,7 @@ impl ControllerActor {
                 Command::Load(LoadSimCommand {
                     clients_evolution: simulation.bots.iter().cloned().map(Into::into).collect(),
                     script: simulation.script.clone(),
+                    simulation_id: String::new(),
                 }),
             ],
             SimulationState::Launched {
@@ -214,6 +215,7 @@ impl ControllerActor {
                 Command::Load(LoadSimCommand {
                     clients_evolution: simulation.bots.iter().cloned().map(Into::into).collect(),
                     script: simulation.script.clone(),
+                    simulation_id: String::new(),
                 }),
                 Command::Launch(LaunchCommand {
                     start_ts: Some((*start_ts).into()),
@@ -320,7 +322,7 @@ mod test {
             timestamp: Some(SystemTime::now().into()),
             name: String::new(),
             state: grpc::AgentSimulationState::Idle as i32,
-            simulation_id: String::new(),
+            ..Default::default()
         }]);
 
         controller_addr.send(update).await.expect("send failed");

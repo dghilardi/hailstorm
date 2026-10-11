@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Agents load simulations atomically and report the loaded simulation identifier and any load error to the controller.
+
 ### Changed
 - Reject scripts whose bots fail to register or use a zero action interval; bots without periodic actions are valid and only run their hooks.
 

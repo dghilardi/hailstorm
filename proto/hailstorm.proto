@@ -15,7 +15,10 @@ message AgentUpdate {
   google.protobuf.Timestamp timestamp = 4;
   string name = 16;
   AgentSimulationState state = 17;
+  // Identifier of the simulation loaded by the agent, empty when none is loaded.
   string simulation_id = 18;
+  // Why the agent could not load `simulation_id`, empty on success.
+  string simulation_error = 19;
 }
 
 message ModelStats {
@@ -99,6 +102,8 @@ message StopCommand {
 message LoadSimCommand {
   repeated ClientDistribution clients_evolution = 1;
   string script = 2;
+  // Identifier assigned by the controller to this simulation.
+  string simulation_id = 3;
 }
 
 message ClientDistribution {

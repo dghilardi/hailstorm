@@ -120,6 +120,7 @@ async fn commands_survive_repeated_grpc_reconnections() {
         Command::Load(LoadSimCommand {
             script: "struct Bot; impl Bot { pub fn new(args) { Self } pub fn register_bot(bot) { } }".into(),
             clients_evolution: vec![ClientDistribution { model: "Bot".into(), shape: "0".into() }],
+            simulation_id: "reconnection".into(),
         }),
         Command::Launch(LaunchCommand { start_ts: Some(SystemTime::now().into()) }),
     ])).await.unwrap();

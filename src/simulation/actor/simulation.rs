@@ -11,7 +11,6 @@ use futures::FutureExt;
 use crate::simulation::actor::bot::{ActionExecutionError, BotState, ExecuteHandler};
 use crate::simulation::bot::registry::BotRegistry;
 use crate::simulation::bot_model::BotModel;
-use crate::simulation::error::SimulationError;
 use crate::simulation::rune::types::value::OwnedValue;
 use crate::simulation::shape::parse_shape_fun;
 use crate::utils::actix::synchro_context::WeakContext;
@@ -26,6 +25,8 @@ pub struct SimulationActor {
     agent_index: Option<u32>,
     model_shapes: HashMap<String, Box<dyn Fn(f64) -> f64>>,
     bots: HashMap<String, BotModel>,
+    simulation_id: String,
+    simulation_error: Option<String>,
 }
 
 impl Actor for SimulationActor {
@@ -51,15 +52,58 @@ impl SimulationActor {
             agent_index: Some(0),
             model_shapes: Default::default(),
             bots: Default::default(),
+            simulation_id: String::new(),
+            simulation_error: None,
         }
     }
 
-    fn register_model(&mut self, model: String, shape: String) -> Result<(), SimulationError> {
-        let shape_fun = parse_shape_fun(shape)?;
+    /// Load a simulation atomically: either every shape and bot model is valid, or nothing is kept.
+    fn load_simulation(
+        &mut self,
+        model_shapes: HashMap<String, String>,
+        script: &str,
+    ) -> Result<(), String> {
+        let mut shapes: HashMap<String, Box<dyn Fn(f64) -> f64>> = HashMap::new();
+        for (model, shape) in model_shapes {
+            let shape_fun = parse_shape_fun(shape)
+                .map_err(|err| format!("Invalid shape for model '{model}' - {err}"))?;
+            shapes.insert(model, Box::new(shape_fun));
+        }
 
-        self.model_shapes.insert(model, Box::new(shape_fun));
+        self.bot_registry
+            .load_script(script)
+            .map_err(|err| err.to_string())?;
 
+        let bot_models = self.bot_registry.model_names();
+        let mut missing = shapes
+            .keys()
+            .filter(|model| !bot_models.contains(model))
+            .cloned()
+            .collect::<Vec<_>>();
+        missing.sort();
+        if let Some(model) = missing.first() {
+            return Err(format!("No bot type named '{model}' in the script"));
+        }
+
+        self.bots.clear();
+        for (idx, model) in bot_models.into_iter().enumerate() {
+            if let Some(factory) = self.bot_registry.build_factory(model) {
+                self.bots.insert(
+                    model.to_string(),
+                    BotModel::new(self.agent_id, idx as u32, factory)
+                        .with_execution_limits(self.simulation_params.execution_limits),
+                );
+            }
+        }
+        self.model_shapes = shapes;
         Ok(())
+    }
+
+    fn reset(&mut self) {
+        self.start_ts = None;
+        self.bot_registry.reset_script();
+        self.model_shapes.clear();
+        self.bots.clear();
     }
 
     fn normalize_count(global_count: f64, agent_index: u32, agents_count: u32) -> usize {
@@ -199,6 +243,7 @@ impl Handler<BotStateChange> for SimulationActor {
 pub(crate) enum SimulationCommand {
     /// Load a simulation with given model shapes and Rune script.
     LoadSimulation {
+        simulation_id: String,
         model_shapes: HashMap<String, String>,
         script: String,
     },
@@ -226,40 +271,20 @@ impl Handler<SimulationCommandLst> for SimulationActor {
         for cmd in msg.commands {
             match cmd {
                 SimulationCommand::LoadSimulation {
+                    simulation_id,
                     model_shapes,
                     script,
                 } => {
-                    let model_registration_out = model_shapes
-                        .into_iter()
-                        .map(|(model, shape)| self.register_model(model, shape))
-                        .collect::<Result<Vec<_>, _>>();
-
-                    if let Err(err) = model_registration_out {
-                        log::error!("Error registering simulation clients - {err}")
+                    self.simulation_error = self
+                        .load_simulation(model_shapes, &script)
+                        .err()
+                        .inspect(|err| {
+                            log::error!("Error loading simulation '{simulation_id}' - {err}")
+                        });
+                    if self.simulation_error.is_some() {
+                        self.reset();
                     }
-
-                    let load_script_out = self.bot_registry.load_script(&script);
-                    if let Err(err) = load_script_out {
-                        log::error!("Error loading script - {err}");
-                    }
-
-                    self.bots.drain();
-                    for (idx, model) in self.bot_registry.model_names().into_iter().enumerate() {
-                        match self.bot_registry.build_factory(model) {
-                            Some(factory) => {
-                                self.bots.insert(
-                                    model.to_string(),
-                                    BotModel::new(self.agent_id, idx as u32, factory)
-                                        .with_execution_limits(
-                                            self.simulation_params.execution_limits,
-                                        ),
-                                );
-                            }
-                            None => {
-                                log::error!("No factory available for model '{model}', skipping");
-                            }
-                        }
-                    }
+                    self.simulation_id = simulation_id;
                 }
                 SimulationCommand::LaunchSimulation { start_ts } => {
                     self.start_ts = Some(start_ts);
@@ -287,6 +312,8 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                     if reset {
                         self.bot_registry.reset_script();
                         self.model_shapes.clear();
+                        self.simulation_id.clear();
+                        self.simulation_error = None;
                     }
                 }
             }
@@ -314,6 +341,8 @@ pub(crate) struct SimulationStats {
     pub stats: Vec<ClientStats>,
     pub timestamp: SystemTime,
     pub state: SimulationState,
+    pub simulation_id: String,
+    pub simulation_error: Option<String>,
 }
 
 #[derive(Message)]
@@ -349,6 +378,8 @@ impl Handler<FetchSimulationStats> for SimulationActor {
             stats,
             timestamp: SystemTime::now(),
             state,
+            simulation_id: self.simulation_id.clone(),
+            simulation_error: self.simulation_error.clone(),
         }
     }
 }
@@ -410,6 +441,83 @@ mod test {
         )
         .unwrap();
         SimulationActor::new(agent_id, SimulationParams::default(), registry)
+    }
+
+    const BOT_SCRIPT: &str = r#"
+        struct Bot;
+        impl Bot {
+            pub fn new(args) { Self }
+            pub fn register_bot(bot) {
+                bot.register_action(hailstorm::bot::alive(1.0), Self::action);
+            }
+            pub fn action(self) {}
+        }
+    "#;
+
+    fn load(id: &str, shapes: &[(&str, &str)], script: &str) -> SimulationCommand {
+        SimulationCommand::LoadSimulation {
+            simulation_id: id.to_string(),
+            model_shapes: shapes
+                .iter()
+                .map(|(model, shape)| (model.to_string(), shape.to_string()))
+                .collect(),
+            script: script.to_string(),
+        }
+    }
+
+    async fn stats_after(
+        addr: &actix::Addr<SimulationActor>,
+        commands: Vec<SimulationCommand>,
+    ) -> SimulationStats {
+        addr.send(SimulationCommandLst { commands }).await.unwrap();
+        addr.send(FetchSimulationStats).await.unwrap()
+    }
+
+    #[actix::test]
+    async fn a_valid_load_reports_its_identifier_without_errors() {
+        let addr = simulation(0).start();
+        let stats = stats_after(&addr, vec![load("run-1", &[("Bot", "10")], BOT_SCRIPT)]).await;
+        assert!(matches!(stats.state, SimulationState::Ready));
+        assert_eq!(stats.simulation_id, "run-1");
+        assert_eq!(stats.simulation_error, None);
+    }
+
+    #[actix::test]
+    async fn invalid_simulations_are_reported_and_leave_the_agent_idle() {
+        for (shapes, script, expected) in [
+            (
+                vec![("Bot", "10 *")],
+                BOT_SCRIPT,
+                "Invalid shape for model 'Bot'",
+            ),
+            (
+                vec![("Other", "10")],
+                BOT_SCRIPT,
+                "No bot type named 'Other'",
+            ),
+            (vec![("Bot", "10")], "struct Bot", "Invalid script"),
+        ] {
+            let addr = simulation(0).start();
+            stats_after(&addr, vec![load("run-1", &[("Bot", "10")], BOT_SCRIPT)]).await;
+            let stats = stats_after(&addr, vec![load("run-2", &shapes, script)]).await;
+            assert!(matches!(stats.state, SimulationState::Idle));
+            assert_eq!(stats.simulation_id, "run-2");
+            let error = stats.simulation_error.expect("the error must be reported");
+            assert!(error.contains(expected), "{error}");
+        }
+    }
+
+    #[actix::test]
+    async fn a_reset_clears_the_reported_simulation() {
+        let addr = simulation(0).start();
+        stats_after(&addr, vec![load("run-1", &[("Bot", "10 *")], BOT_SCRIPT)]).await;
+        let stats = stats_after(
+            &addr,
+            vec![SimulationCommand::StopSimulation { reset: true }],
+        )
+        .await;
+        assert_eq!(stats.simulation_id, "");
+        assert_eq!(stats.simulation_error, None);
     }
 
     #[actix::test]

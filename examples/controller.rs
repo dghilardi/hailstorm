@@ -174,6 +174,7 @@ async fn main() {
                 .map(|(model, shape)| ClientDistribution { model, shape })
                 .collect(),
             script: fs::read_to_string(config.script_path).expect("Error loading script file"),
+            simulation_id: String::from("example"),
         }),
     };
     Server::builder()

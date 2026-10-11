@@ -81,6 +81,7 @@ impl From<SimulationDef> for LoadSimCommand {
                 .map(|BotDef { model, shape }| ClientDistribution { model, shape })
                 .collect(),
             script: def.script,
+            simulation_id: String::new(),
         }
     }
 }
