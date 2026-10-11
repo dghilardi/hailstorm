@@ -8,9 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add `StopSimulation` and `GetSimulationStatus` controller messages; loading returns the simulation identifier and alignment requires agents to report it.
 - Agents load simulations atomically and report the loaded simulation identifier and any load error to the controller.
 
 ### Changed
+- **Breaking:** `LoadSimulation` and `StartSimulation` return `Result`, rejecting invalid definitions and starts without a loaded simulation; agents that failed to load the current simulation are no longer reloaded in a loop.
 - Reject scripts whose bots fail to register or use a zero action interval; bots without periodic actions are valid and only run their hooks.
 
 ## [0.4.0] 2026-10-11

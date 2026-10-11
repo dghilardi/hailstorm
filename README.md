@@ -194,6 +194,24 @@ async fn main() {
 }
 ```
 
+### Controlling simulations
+
+Send messages to the controller actor (`ControllerApp::controller_addr()`):
+
+- `LoadSimulation` validates the bot definitions and shapes, assigns a simulation
+  identifier, and returns it, or `SimulationControlError::InvalidSimulation`.
+- `StartSimulation` launches the loaded simulation, or returns
+  `SimulationControlError::NotLoaded`.
+- `StopSimulation` stops and unloads the simulation on every agent.
+- `GetSimulationStatus` returns the controller phase and, for each agent, the
+  reported state, simulation identifier, and load error.
+
+Agents load simulations atomically: an invalid script, an invalid shape, a bot
+that fails to register, or a shape without a matching bot type leaves the agent
+idle and reports the error. The controller does not resend a simulation to an
+agent that already failed to load it. Upgrade controllers and agents together:
+agents that do not report the simulation identifier are never considered aligned.
+
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request.

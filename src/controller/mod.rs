@@ -7,7 +7,7 @@
 //!
 //! - [`builder::ControllerBuilder`] — Fluent builder for configuring and launching a controller.
 //! - [`actor::ControllerActor`] — The core actix actor managing simulation state and agent alignment.
-//! - [`message`] — Messages for loading and starting simulations.
+//! - [`message`] — Messages for loading, starting, stopping and inspecting simulations.
 //! - [`model::simulation`] — Simulation and bot definition types.
 
 pub mod actor;
