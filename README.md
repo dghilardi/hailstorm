@@ -206,6 +206,14 @@ Send messages to the controller actor (`ControllerApp::controller_addr()`):
 - `GetSimulationStatus` returns the controller phase and, for each agent, the
   reported state, simulation identifier, and load error.
 
+`SimulationStatus::outcome()` summarizes the agents' confirmations as idle,
+pending, ready, running, or failed.
+
+To control an agent from the same process (for example a desktop tool), launch
+it with `controller::embedded::EmbeddedUpstream` as upstream and send
+`StartEmbeddedController` to its upstream actor: the returned `ControllerActor`
+accepts the same messages without a gRPC connection.
+
 Agents load simulations atomically: an invalid script, an invalid shape, a bot
 that fails to register, or a shape without a matching bot type leaves the agent
 idle and reports the error. The controller does not resend a simulation to an

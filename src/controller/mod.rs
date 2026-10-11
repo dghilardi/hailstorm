@@ -8,10 +8,12 @@
 //! - [`builder::ControllerBuilder`] — Fluent builder for configuring and launching a controller.
 //! - [`actor::ControllerActor`] — The core actix actor managing simulation state and agent alignment.
 //! - [`message`] — Messages for loading, starting, stopping and inspecting simulations.
+//! - [`embedded`] — Controller running in the same process as an agent, without gRPC.
 //! - [`model::simulation`] — Simulation and bot definition types.
 
 pub mod actor;
 pub mod builder;
 mod client;
+pub mod embedded;
 pub mod message;
 pub mod model;

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add `SimulationStatus::outcome()` and an embedded controller to drive an agent in the same process without gRPC.
+
 ## [0.5.1] 2026-10-11
 
 ### Security

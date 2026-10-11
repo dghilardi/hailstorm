@@ -86,6 +86,21 @@ pub struct AgentStatus {
     pub last_update: SystemTime,
 }
 
+/// Overall progress of the loaded simulation across the connected agents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SimulationOutcome {
+    /// No simulation is loaded.
+    Idle,
+    /// Some agents have not confirmed the current simulation yet.
+    Pending,
+    /// Every agent loaded the simulation, which has not been started.
+    Ready,
+    /// Every agent is running (or waiting to start) the simulation.
+    Running,
+    /// At least one agent could not load the simulation.
+    Failed,
+}
+
 /// Snapshot of the controller simulation and of the connected agents.
 #[derive(Debug, Clone, actix::MessageResponse)]
 pub struct SimulationStatus {
@@ -95,4 +110,136 @@ pub struct SimulationStatus {
     pub simulation_id: Option<String>,
     /// Connected agents, sorted by identifier.
     pub agents: Vec<AgentStatus>,
+}
+
+impl SimulationStatus {
+    /// Summarize the agents' confirmations of the current simulation.
+    pub fn outcome(&self) -> SimulationOutcome {
+        let Some(simulation_id) = self.simulation_id.as_deref() else {
+            return SimulationOutcome::Idle;
+        };
+        let current = |agent: &&AgentStatus| agent.simulation_id == simulation_id;
+        if self
+            .agents
+            .iter()
+            .filter(current)
+            .any(|agent| agent.simulation_error.is_some())
+        {
+            return SimulationOutcome::Failed;
+        }
+        let (expected, outcome): (&[AgentSimulationState], _) = match self.phase {
+            SimulationPhase::Idle => return SimulationOutcome::Idle,
+            SimulationPhase::Ready => (&[AgentSimulationState::Ready], SimulationOutcome::Ready),
+            SimulationPhase::Launched { .. } => (
+                &[AgentSimulationState::Waiting, AgentSimulationState::Running],
+                SimulationOutcome::Running,
+            ),
+        };
+        let confirmed = !self.agents.is_empty()
+            && self.agents.iter().all(|agent| {
+                agent.simulation_id == simulation_id && expected.contains(&agent.state)
+            });
+        if confirmed {
+            outcome
+        } else {
+            SimulationOutcome::Pending
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn agent(
+        agent_id: u32,
+        state: AgentSimulationState,
+        simulation_id: &str,
+        error: Option<&str>,
+    ) -> AgentStatus {
+        AgentStatus {
+            agent_id,
+            state,
+            simulation_id: simulation_id.to_string(),
+            simulation_error: error.map(String::from),
+            last_update: SystemTime::now(),
+        }
+    }
+
+    fn status(phase: SimulationPhase, agents: Vec<AgentStatus>) -> SimulationStatus {
+        SimulationStatus {
+            simulation_id: (phase != SimulationPhase::Idle).then(|| String::from("run")),
+            phase,
+            agents,
+        }
+    }
+
+    #[test]
+    fn outcome_reflects_agent_confirmations() {
+        use AgentSimulationState::*;
+        let launched = || SimulationPhase::Launched {
+            start_ts: SystemTime::now(),
+        };
+        let cases = [
+            (
+                status(SimulationPhase::Idle, vec![agent(1, Idle, "", None)]),
+                SimulationOutcome::Idle,
+            ),
+            (
+                status(SimulationPhase::Ready, vec![]),
+                SimulationOutcome::Pending,
+            ),
+            (
+                status(
+                    SimulationPhase::Ready,
+                    vec![agent(1, Ready, "run", None), agent(2, Ready, "old", None)],
+                ),
+                SimulationOutcome::Pending,
+            ),
+            (
+                status(
+                    SimulationPhase::Ready,
+                    vec![agent(1, Ready, "run", None), agent(2, Ready, "run", None)],
+                ),
+                SimulationOutcome::Ready,
+            ),
+            (
+                status(
+                    SimulationPhase::Ready,
+                    vec![
+                        agent(1, Ready, "run", None),
+                        agent(2, Idle, "run", Some("bad")),
+                    ],
+                ),
+                SimulationOutcome::Failed,
+            ),
+            (
+                status(
+                    SimulationPhase::Ready,
+                    vec![
+                        agent(1, Idle, "old", Some("bad")),
+                        agent(2, Ready, "run", None),
+                    ],
+                ),
+                SimulationOutcome::Pending,
+            ),
+            (
+                status(
+                    launched(),
+                    vec![
+                        agent(1, Waiting, "run", None),
+                        agent(2, Running, "run", None),
+                    ],
+                ),
+                SimulationOutcome::Running,
+            ),
+            (
+                status(launched(), vec![agent(1, Ready, "run", None)]),
+                SimulationOutcome::Pending,
+            ),
+        ];
+        for (index, (status, expected)) in cases.into_iter().enumerate() {
+            assert_eq!(status.outcome(), expected, "case {index}");
+        }
+    }
 }
