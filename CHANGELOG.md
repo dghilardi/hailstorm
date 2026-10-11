@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] 2026-10-11
+
 ### Added
 - Add `StopSimulation` and `GetSimulationStatus` controller messages; loading returns the simulation identifier and alignment requires agents to report it.
 - Agents load simulations atomically and report the loaded simulation identifier and any load error to the controller.
