@@ -95,6 +95,7 @@ impl SimulationDef {
                 ));
             }
             crate::simulation::shape::parse_shape_fun(bot.shape.clone())
+                .map(drop)
                 .map_err(|err| format!("Invalid shape for model '{}' - {err}", bot.model))?;
         }
         Ok(())
