@@ -24,12 +24,18 @@ impl ScriptedBot {
         self.behaviour.get_interval()
     }
 
+    pub fn has_actions(&self) -> bool {
+        self.behaviour.has_actions()
+    }
+
     pub(crate) fn reset_execution(&mut self) {
         self.vm.clear();
     }
 
     pub async fn run_random_action(&mut self) -> Result<(), VmError> {
-        let action_hash = self.behaviour.random_action();
+        let Some(action_hash) = self.behaviour.random_action() else {
+            return Ok(());
+        };
         let _result: rune::Value = self.vm.async_call(action_hash, (&self.instance,)).await?;
         Ok(())
     }

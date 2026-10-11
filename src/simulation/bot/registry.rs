@@ -114,33 +114,36 @@ impl BotRegistry {
             }
         }
 
-        let bot_types = types_with_methods
-            .into_iter()
-            .filter(|(k, methods)| {
-                let has_new = methods.iter().any(|m| m == "new");
-                let has_register = methods.iter().any(|m| m == "register_bot");
-                let is_a_bot = has_new && has_register;
-                if !is_a_bot {
-                    log::debug!("Skipping {k} — not a bot (has new: {has_new}, has register: {has_register})");
+        let mut bot_types = HashMap::new();
+        let mut invalid_bots = Vec::new();
+        for (k, methods) in types_with_methods {
+            let has_new = methods.iter().any(|m| m == "new");
+            let has_register = methods.iter().any(|m| m == "register_bot");
+            if !(has_new && has_register) {
+                log::debug!(
+                    "Skipping {k} — not a bot (has new: {has_new}, has register: {has_register})"
+                );
+                continue;
+            }
+            let mut bot = BotBehaviour::default();
+            let register_out = vm
+                .call([k.as_str(), "register_bot"], (&mut bot,))
+                .map_err(|err| err.to_string())
+                .and_then(|_: rune::Value| bot.validate());
+            match register_out {
+                Ok(()) => {
+                    log::debug!("Registering {k}");
+                    bot_types.insert(k, bot);
                 }
-                is_a_bot
-            })
-            .flat_map(|(k, _)| {
-                let mut bot = BotBehaviour::default();
-                let register_out = vm.call([k.as_str(), "register_bot"], (&mut bot,));
+                Err(reason) => invalid_bots.push((k, reason)),
+            }
+        }
 
-                match register_out {
-                    Ok(_) => {
-                        log::debug!("Registering {k}");
-                        Some((k, bot))
-                    }
-                    Err(err) => {
-                        log::error!("Error registering bot '{k}': {err}");
-                        None
-                    }
-                }
-            })
-            .collect::<HashMap<_, _>>();
+        // Reject the whole script so that agents never run a partial simulation.
+        invalid_bots.sort();
+        if let Some((bot, reason)) = invalid_bots.into_iter().next() {
+            return Err(LoadScriptError::InvalidBot { bot, reason });
+        }
 
         self.unit = unit;
         self.bot_types = bot_types;
@@ -337,7 +340,7 @@ mod test {
 
         let mut vm = Vm::new(registry.runtime, registry.unit);
         let instance = vm.call(&["Demo", "new"], ()).unwrap();
-        vm.call(bot.random_action(), (&instance,))
+        vm.call(bot.random_action().unwrap(), (&instance,))
             .expect("Error running action");
     }
 
@@ -352,14 +355,70 @@ mod test {
     }
 
     #[actix::test]
-    async fn test_load_valid_script_with_bot_registration_error() {
+    async fn bot_registration_errors_reject_the_script() {
         let context = Context::with_default_modules().unwrap();
         let metrics_addr = MetricsManagerActor::start_default();
 
         let mut bot_registry = BotRegistry::new(context, metrics_addr).unwrap();
-        bot_registry.load_script(BOT_REGISTER_ERR_SCRIPT).unwrap();
+        bot_registry.load_script(MINIMAL_VALID_SCRIPT).unwrap();
 
-        assert_eq!(0, bot_registry.count_bot_models());
+        assert!(matches!(
+            bot_registry.load_script(BOT_REGISTER_ERR_SCRIPT),
+            Err(LoadScriptError::InvalidBot { bot, .. }) if bot == "Demo"
+        ));
+        // A rejected script leaves the previously loaded one untouched.
+        assert_eq!(1, bot_registry.count_bot_models());
+    }
+
+    fn registry() -> BotRegistry {
+        BotRegistry::new(
+            Context::with_default_modules().unwrap(),
+            MetricsManagerActor::start_default(),
+        )
+        .unwrap()
+    }
+
+    #[actix::test]
+    async fn a_zero_interval_rejects_the_script() {
+        let out = registry().load_script(
+            r#"
+            struct Bot;
+            impl Bot {
+                pub fn new(args) { Self }
+                pub fn register_bot(bot) {
+                    bot.set_interval_millis(0);
+                    bot.register_action(hailstorm::bot::alive(1.0), Self::action);
+                }
+                pub fn action(self) {}
+            }
+        "#,
+        );
+        assert!(
+            matches!(out, Err(LoadScriptError::InvalidBot { reason, .. }) if reason.contains("interval"))
+        );
+    }
+
+    #[actix::test]
+    async fn bots_without_selectable_actions_are_valid_and_run_no_action() {
+        let mut registry = registry();
+        registry
+            .load_script(
+                r#"
+            struct Bot;
+            impl Bot {
+                pub fn new(args) { Self }
+                pub fn register_bot(bot) {
+                    bot.register_action(hailstorm::bot::alive(0.0), Self::action);
+                    bot.register_action(hailstorm::bot::enter_state(hailstorm::bot::BotState::Running), Self::action);
+                }
+                pub fn action(self) { panic("must not run") }
+            }
+        "#,
+            )
+            .unwrap();
+        let mut bot = registry.build_bot(CompoundId::new(1, 0, 1), "Bot").unwrap();
+        assert!(!bot.has_actions());
+        bot.run_random_action().await.unwrap();
     }
 
     #[actix::test]

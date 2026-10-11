@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Reject scripts whose bots fail to register or use a zero action interval; bots without periodic actions are valid and only run their hooks.
+
 ## [0.4.0] 2026-10-11
 
 ### Added

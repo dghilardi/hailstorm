@@ -32,4 +32,12 @@ pub enum LoadScriptError {
     /// The script failed to compile.
     #[error("Invalid script - {0}")]
     InvalidScript(String),
+    /// A bot type failed to register or declared an invalid configuration.
+    #[error("Invalid bot '{bot}' - {reason}")]
+    InvalidBot {
+        /// Name of the bot type.
+        bot: String,
+        /// Why the registration was rejected.
+        reason: String,
+    },
 }

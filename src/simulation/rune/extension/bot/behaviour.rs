@@ -67,15 +67,41 @@ impl BotBehaviour {
         self.interval = Duration::from_millis(interval);
     }
 
-    pub fn random_action(&self) -> Hash {
+    /// Check the registered configuration before any bot is spawned.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.interval.is_zero() {
+            return Err(String::from(
+                "the action interval must be greater than zero",
+            ));
+        }
+        if !self.total_weight.is_finite() {
+            return Err(String::from("action weights must be finite"));
+        }
+        Ok(())
+    }
+
+    /// Whether at least one periodic action can be selected.
+    pub fn has_actions(&self) -> bool {
+        self.total_weight > 0.0
+    }
+
+    /// Pick a periodic action according to its weight, if any can be selected.
+    pub fn random_action(&self) -> Option<Hash> {
+        if !self.has_actions() {
+            return None;
+        }
         let mut rand = rand::rng().random_range(0f64..self.total_weight);
-        for act in &self.actions {
+        for act in self.actions.iter().filter(|act| act.weight > 0.0) {
             rand -= act.weight as f64;
             if rand <= 0f64 {
-                return act.hash;
+                return Some(act.hash);
             }
         }
-        return self.actions.last().expect("No actions found").hash;
+        self.actions
+            .iter()
+            .rev()
+            .find(|act| act.weight > 0.0)
+            .map(|act| act.hash)
     }
 
     pub fn hook_action(&self, state: BotState) -> Option<Hash> {

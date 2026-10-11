@@ -142,7 +142,11 @@ impl Actor for BotActor {
                 .map(|_, _, ctx| ctx.notify(StopBot)),
             );
         }
-        let interval = self.bot.as_ref().expect("bot not defined").get_interval();
+        let bot = self.bot.as_ref().expect("bot not defined");
+        if !bot.has_actions() {
+            return;
+        }
+        let interval = bot.get_interval();
         let random_delay =
             Duration::from_millis(rand::rng().random_range(0..interval.as_millis() as u64));
         ctx.run_later(random_delay, move |_a, ctx| {
