@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Configure bot action and stop timeouts and the Rune instruction budget through `SimulationParams`.
+
+### Changed
+- **Breaking:** report histogram sums in milliseconds and add the `Command::UpdateAgents`, `ActionExecutionError::Cancelled` and `ActionExecutionError::Timeout` variants.
+
 ### Fixed
 - Preserve structured actor payloads after the Rune migration and reject unsupported values instead of silently replacing them with unit.
 - Finalize cancelled action observations without leaving pending timers or duplicating completed measurements.
