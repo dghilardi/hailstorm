@@ -1,0 +1,10 @@
+[vcs]
+software = "Git"
+
+[modules.root]
+path = "."
+packageManager = "Cargo"
+main = true
+
+[modules.root.hooks.after_rel]
+test = ["cargo", "test"]
