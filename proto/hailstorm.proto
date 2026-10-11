@@ -102,7 +102,10 @@ message StopCommand {
 message LoadSimCommand {
   repeated ClientDistribution clients_evolution = 1;
   string script = 2;
-  // Identifier assigned by the controller to this simulation.
+  // Identifier assigned by the controller to one immutable simulation definition.
+  // Repeated loads with the same non-empty identifier preserve the current state,
+  // including running bots and load errors. Reset before explicitly retrying a load.
+  // An empty identifier retains legacy behavior and always reloads the definition.
   string simulation_id = 3;
 }
 

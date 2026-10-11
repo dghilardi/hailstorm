@@ -1,15 +1,14 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
-use actix::dev::RecipientRequest;
 use actix::{
     Actor, ActorFuture, ActorFutureExt, AtomicResponse, Context, Handler, Recipient,
     ResponseFuture, WrapFuture,
 };
 
-use crate::communication::message::{ControllerCommandMessage, MultiAgentUpdateMessage};
+use crate::communication::message::MultiAgentUpdateMessage;
 use crate::communication::protobuf::grpc;
 use crate::communication::protobuf::grpc::command_item::Command;
 use crate::communication::protobuf::grpc::{
@@ -135,22 +134,26 @@ impl ControllerActor {
         self.agents_state.len()
     }
 
-    fn broadcast_simulation_state(&mut self) -> RecipientRequest<ControllerCommandMessage> {
-        self.downstream
-            .send_broadcast(self.generate_simulation_state_commands())
-    }
-
-    fn misaligned_agents(&self) -> HashMap<u32, AgentState> {
-        self.agents_state
-            .iter()
-            .filter(|(_, agent)| {
-                !self
-                    .simulation
-                    .is_aligned(&agent.state, &agent.simulation_id)
-                    && !self.failed_current_simulation(agent)
-            })
-            .map(|(k, v)| (*k, v.clone()))
-            .collect::<HashMap<_, _>>()
+    fn alignment_commands(&self, agent: &AgentState) -> Vec<Command> {
+        if self
+            .simulation
+            .is_aligned(&agent.state, &agent.simulation_id)
+            || self.failed_current_simulation(agent)
+        {
+            return Vec::new();
+        }
+        if self.simulation.simulation_id() == Some(agent.simulation_id.as_str()) {
+            return match &self.simulation {
+                SimulationState::Launched { start_ts, .. } => {
+                    vec![Command::Launch(LaunchCommand {
+                        start_ts: Some((*start_ts).into()),
+                    })]
+                }
+                SimulationState::Ready { .. } => vec![Command::Stop(StopCommand { reset: false })],
+                SimulationState::Idle => unreachable!(),
+            };
+        }
+        self.generate_simulation_state_commands()
     }
 
     /// Agents that already failed to load the current simulation are not sent it again.
@@ -163,6 +166,7 @@ impl ControllerActor {
         &mut self,
         updates: &[AgentUpdate],
     ) -> impl Future<Output = ()> {
+        let mut refreshed_agents = HashSet::new();
         for update in updates {
             if let Some(timestamp) = update
                 .timestamp
@@ -172,34 +176,33 @@ impl ControllerActor {
                 .ok()
                 .flatten()
             {
-                let entry = self
+                if self
                     .agents_state
-                    .entry(update.agent_id)
-                    .or_insert_with(|| AgentState::from_update(timestamp, update));
-
-                if entry.timestamp < timestamp {
-                    *entry = AgentState::from_update(timestamp, update);
+                    .get(&update.agent_id)
+                    .map_or(true, |entry| entry.timestamp < timestamp)
+                {
+                    self.agents_state
+                        .insert(update.agent_id, AgentState::from_update(timestamp, update));
+                    refreshed_agents.insert(update.agent_id);
                 }
             }
         }
         self.agents_state
             .retain(|_id, state| state.timestamp.add(Duration::from_secs(60)) > SystemTime::now());
 
-        let misaligned = self.misaligned_agents();
-        let commands = self.generate_simulation_state_commands();
-
-        let maybe_send_fut = if misaligned.is_empty() {
-            None
-        } else {
-            Some(
-                self.downstream
-                    .send_to_agents(misaligned.keys().cloned().collect(), commands),
-            )
-        };
+        let mut requests = Vec::new();
+        for agent_id in refreshed_agents {
+            if let Some(agent) = self.agents_state.get(&agent_id) {
+                let commands = self.alignment_commands(agent);
+                if !commands.is_empty() {
+                    requests.push(self.downstream.send_to_agent(agent_id, commands));
+                }
+            }
+        }
 
         async move {
-            if let Some(send_fut) = maybe_send_fut {
-                if let Err(err) = send_fut.await {
+            for result in futures::future::join_all(requests).await {
+                if let Err(err) = result {
                     log::error!("Error aligning simulation state - {err}");
                 }
             }
@@ -217,7 +220,6 @@ impl ControllerActor {
                 }),
             ],
             SimulationState::Ready { simulation } => vec![
-                Command::Stop(StopCommand { reset: true }),
                 Command::UpdateAgentsCount(agents_count as u32),
                 Command::UpdateAgents(AgentDistribution {
                     agent_ids: self.sorted_agent_ids(),
@@ -232,7 +234,6 @@ impl ControllerActor {
                 start_ts,
                 simulation,
             } => vec![
-                Command::Stop(StopCommand { reset: true }),
                 Command::UpdateAgentsCount(agents_count as u32),
                 Command::UpdateAgents(AgentDistribution {
                     agent_ids: self.sorted_agent_ids(),
@@ -252,9 +253,16 @@ impl ControllerActor {
 
 impl ControllerActor {
     fn broadcast_state_change(&mut self) -> impl ActorFuture<Self, Output = ()> + 'static {
-        async {}
+        self.broadcast_commands(self.generate_simulation_state_commands())
+    }
+
+    fn broadcast_commands(
+        &mut self,
+        commands: Vec<Command>,
+    ) -> impl ActorFuture<Self, Output = ()> + 'static {
+        self.downstream
+            .send_broadcast(commands)
             .into_actor(self)
-            .then(|_, act, _ctx| act.broadcast_simulation_state().into_actor(act))
             .map(|res, _, _| {
                 if let Err(err) = res {
                     log::error!("Error broadcasting simulation state - {err}");
@@ -310,7 +318,10 @@ impl Handler<StartSimulation> for ControllerActor {
         };
 
         AtomicResponse::new(Box::pin(
-            self.broadcast_state_change().map(|_, _, _| Ok(())),
+            self.broadcast_commands(vec![Command::Launch(LaunchCommand {
+                start_ts: Some(start_ts.into()),
+            })])
+            .map(|_, _, _| Ok(())),
         ))
     }
 }
@@ -359,7 +370,7 @@ impl Handler<GetSimulationStatus> for ControllerActor {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::communication::message::MultiAgentUpdateMessage;
+    use crate::communication::message::{ControllerCommandMessage, MultiAgentUpdateMessage};
     use crate::communication::protobuf::grpc::{AgentUpdate, ControllerCommand};
     use crate::communication::server_actor::GrpcServerActor;
     use actix::{Actor, Context, Handler};
@@ -509,6 +520,225 @@ mod test {
             simulation_error: error.to_string(),
             ..Default::default()
         }])
+    }
+
+    fn state_update(
+        agent_id: u32,
+        simulation_id: &str,
+        state: grpc::AgentSimulationState,
+        timestamp: SystemTime,
+    ) -> MultiAgentUpdateMessage {
+        MultiAgentUpdateMessage(vec![AgentUpdate {
+            agent_id,
+            timestamp: Some(timestamp.into()),
+            state: state as i32,
+            simulation_id: simulation_id.to_string(),
+            ..Default::default()
+        }])
+    }
+
+    #[actix::test]
+    async fn starting_a_loaded_simulation_only_broadcasts_launch() {
+        let (controller, commands) = started_controller();
+        let id = controller
+            .send(LoadSimulation::new(definition("10")))
+            .await
+            .unwrap()
+            .unwrap();
+        commands.lock().unwrap().clear();
+        let start_ts = SystemTime::now();
+        controller
+            .send(StartSimulation::at(start_ts))
+            .await
+            .unwrap()
+            .unwrap();
+        let commands = commands.lock().unwrap();
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].commands.len(), 1);
+        assert!(matches!(&commands[0].commands[0].command,
+            Some(Command::Launch(launch)) if launch.start_ts == Some(start_ts.into())));
+        assert!(loaded_ids(&commands).is_empty(), "{id} must remain loaded");
+    }
+
+    #[actix::test]
+    async fn ready_and_waiting_heartbeats_after_launch_only_receive_launch() {
+        let (controller, commands) = started_controller();
+        let id = controller
+            .send(LoadSimulation::new(definition("10")))
+            .await
+            .unwrap()
+            .unwrap();
+        let start_ts = SystemTime::now() - Duration::from_secs(10);
+        controller
+            .send(StartSimulation::at(start_ts))
+            .await
+            .unwrap()
+            .unwrap();
+        for state in [
+            grpc::AgentSimulationState::Ready,
+            grpc::AgentSimulationState::Waiting,
+        ] {
+            controller
+                .send(state_update(1, &id, state, SystemTime::now()))
+                .await
+                .unwrap();
+            let mut commands = commands.lock().unwrap();
+            let targeted = commands
+                .iter()
+                .filter(|command| {
+                    command.target == Some(grpc::controller_command::Target::AgentId(1))
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(targeted.len(), 1);
+            assert_eq!(targeted[0].commands.len(), 1);
+            assert!(matches!(&targeted[0].commands[0].command,
+                Some(Command::Launch(launch)) if launch.start_ts == Some(start_ts.into())));
+            commands.clear();
+        }
+    }
+
+    #[actix::test]
+    async fn older_and_duplicate_heartbeats_do_not_trigger_reconciliation() {
+        let (controller, commands) = started_controller();
+        let id = controller
+            .send(LoadSimulation::new(definition("10")))
+            .await
+            .unwrap()
+            .unwrap();
+        let timestamp = SystemTime::now();
+        controller
+            .send(state_update(
+                1,
+                &id,
+                grpc::AgentSimulationState::Ready,
+                timestamp,
+            ))
+            .await
+            .unwrap();
+        controller
+            .send(StartSimulation::at(timestamp))
+            .await
+            .unwrap()
+            .unwrap();
+        commands.lock().unwrap().clear();
+        for ts in [timestamp, timestamp - Duration::from_secs(1)] {
+            controller
+                .send(state_update(1, "old", grpc::AgentSimulationState::Idle, ts))
+                .await
+                .unwrap();
+        }
+        assert!(commands.lock().unwrap().is_empty());
+        let status = controller.send(GetSimulationStatus).await.unwrap();
+        assert_eq!(status.agents[0].simulation_id, id);
+        assert_eq!(status.agents[0].state, grpc::AgentSimulationState::Ready);
+    }
+
+    #[actix::test]
+    async fn different_agents_receive_only_the_recovery_they_need() {
+        let (controller, commands) = started_controller();
+        let id = controller
+            .send(LoadSimulation::new(definition("10")))
+            .await
+            .unwrap()
+            .unwrap();
+        controller
+            .send(StartSimulation::at(SystemTime::now()))
+            .await
+            .unwrap()
+            .unwrap();
+        commands.lock().unwrap().clear();
+        let mut updates =
+            state_update(1, &id, grpc::AgentSimulationState::Ready, SystemTime::now());
+        updates.0.extend(
+            state_update(
+                2,
+                "old",
+                grpc::AgentSimulationState::Running,
+                SystemTime::now(),
+            )
+            .0,
+        );
+        controller.send(updates).await.unwrap();
+        let commands = commands.lock().unwrap();
+        let targeted = |id| {
+            commands
+                .iter()
+                .find(|command| {
+                    command.target == Some(grpc::controller_command::Target::AgentId(id))
+                })
+                .unwrap()
+        };
+        assert_eq!(targeted(1).commands.len(), 1);
+        assert!(matches!(
+            targeted(1).commands[0].command,
+            Some(Command::Launch(_))
+        ));
+        assert_eq!(loaded_ids(&[targeted(2).clone()]), vec![id]);
+        assert!(targeted(2)
+            .commands
+            .iter()
+            .any(|item| matches!(item.command, Some(Command::Launch(_)))));
+        assert!(!targeted(2)
+            .commands
+            .iter()
+            .any(|item| matches!(item.command, Some(Command::Stop(_)))));
+    }
+
+    #[actix::test]
+    async fn ready_reconciliation_stops_without_unloading_the_definition() {
+        let (controller, commands) = started_controller();
+        let id = controller
+            .send(LoadSimulation::new(definition("10")))
+            .await
+            .unwrap()
+            .unwrap();
+        commands.lock().unwrap().clear();
+        controller
+            .send(state_update(
+                1,
+                &id,
+                grpc::AgentSimulationState::Running,
+                SystemTime::now(),
+            ))
+            .await
+            .unwrap();
+        let commands = commands.lock().unwrap();
+        let targeted = commands
+            .iter()
+            .find(|command| command.target == Some(grpc::controller_command::Target::AgentId(1)))
+            .unwrap();
+        assert_eq!(targeted.commands.len(), 1);
+        assert!(matches!(
+            targeted.commands[0].command,
+            Some(Command::Stop(StopCommand { reset: false }))
+        ));
+    }
+
+    #[actix::test]
+    async fn other_agent_updates_do_not_retry_cached_misalignment() {
+        let (controller, commands) = started_controller();
+        let id = controller
+            .send(LoadSimulation::new(definition("10")))
+            .await
+            .unwrap()
+            .unwrap();
+        controller
+            .send(StartSimulation::at(SystemTime::now()))
+            .await
+            .unwrap()
+            .unwrap();
+        controller.send(update(1, "old", "")).await.unwrap();
+        commands.lock().unwrap().clear();
+        controller
+            .send(state_update(
+                2,
+                &id,
+                grpc::AgentSimulationState::Running,
+                SystemTime::now(),
+            ))
+            .await
+            .unwrap();
+        assert!(loaded_ids(&commands.lock().unwrap()).is_empty());
     }
 
     #[actix::test]
