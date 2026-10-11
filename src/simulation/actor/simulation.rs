@@ -275,6 +275,12 @@ impl Handler<SimulationCommandLst> for SimulationActor {
                     model_shapes,
                     script,
                 } => {
+                    // A non-empty identifier names one immutable definition. Heartbeats can
+                    // cause the controller to resend it after it has already been applied.
+                    if !simulation_id.is_empty() && simulation_id == self.simulation_id {
+                        continue;
+                    }
+                    self.start_ts = None;
                     self.simulation_error = self
                         .load_simulation(model_shapes, &script)
                         .err()
@@ -480,6 +486,118 @@ mod test {
         assert!(matches!(stats.state, SimulationState::Ready));
         assert_eq!(stats.simulation_id, "run-1");
         assert_eq!(stats.simulation_error, None);
+    }
+
+    #[actix::test]
+    async fn repeated_loads_preserve_running_bots_and_their_start_time() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let created = Arc::new(AtomicUsize::new(0));
+        let stopped = Arc::new(AtomicUsize::new(0));
+        let mut context = rune::Context::with_default_modules().unwrap();
+        let mut module = rune::Module::with_crate("test").unwrap();
+        let counter = created.clone();
+        module
+            .function("created", move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+            })
+            .build()
+            .unwrap();
+        let counter = stopped.clone();
+        module
+            .function("stopped", move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+            })
+            .build()
+            .unwrap();
+        context.install(module).unwrap();
+        let registry = BotRegistry::new(context, MetricsManagerActor::start_default()).unwrap();
+        let addr = SimulationActor::new(0, SimulationParams::default(), registry).start();
+        let script = r#"
+            struct Bot;
+            impl Bot {
+                pub fn new(args) { test::created(); Self }
+                pub fn register_bot(bot) {
+                    bot.register_action(hailstorm::bot::enter_state(hailstorm::bot::BotState::Stopping), Self::stop);
+                }
+                pub fn stop(self) { test::stopped(); }
+            }
+        "#;
+        let start_ts = SystemTime::now() - Duration::from_secs(1);
+        stats_after(
+            &addr,
+            vec![
+                load("run-1", &[("Bot", "1")], script),
+                SimulationCommand::LaunchSimulation { start_ts },
+            ],
+        )
+        .await;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while created.load(Ordering::SeqCst) == 0 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let stats = stats_after(&addr, vec![load("run-1", &[("Bot", "1")], script)]).await;
+        assert!(matches!(stats.state, SimulationState::Running));
+        assert_eq!(
+            stats.stats[0].count_by_state.get(&BotState::Running),
+            Some(&1)
+        );
+        tokio::time::sleep(Duration::from_millis(1600)).await;
+        assert_eq!(created.load(Ordering::SeqCst), 1);
+        assert_eq!(stopped.load(Ordering::SeqCst), 0);
+        stats_after(
+            &addr,
+            vec![SimulationCommand::StopSimulation { reset: true }],
+        )
+        .await;
+    }
+
+    #[actix::test]
+    async fn a_new_definition_does_not_inherit_the_previous_start_time() {
+        let addr = simulation(0).start();
+        stats_after(
+            &addr,
+            vec![
+                load("run-1", &[("Bot", "0")], BOT_SCRIPT),
+                SimulationCommand::LaunchSimulation {
+                    start_ts: SystemTime::now(),
+                },
+            ],
+        )
+        .await;
+        let stats = stats_after(&addr, vec![load("run-2", &[("Bot", "0")], BOT_SCRIPT)]).await;
+        assert!(matches!(stats.state, SimulationState::Ready));
+        assert_eq!(stats.simulation_id, "run-2");
+    }
+
+    #[actix::test]
+    async fn duplicate_failed_loads_preserve_the_error_until_reset() {
+        let addr = simulation(0).start();
+        let failed = stats_after(&addr, vec![load("run-1", &[("Bot", "10 *")], BOT_SCRIPT)]).await;
+        let duplicate = stats_after(&addr, vec![load("run-1", &[("Bot", "0")], BOT_SCRIPT)]).await;
+        assert!(matches!(duplicate.state, SimulationState::Idle));
+        assert_eq!(duplicate.simulation_error, failed.simulation_error);
+        stats_after(
+            &addr,
+            vec![SimulationCommand::StopSimulation { reset: true }],
+        )
+        .await;
+        let retried = stats_after(&addr, vec![load("run-1", &[("Bot", "0")], BOT_SCRIPT)]).await;
+        assert!(matches!(retried.state, SimulationState::Ready));
+    }
+
+    #[actix::test]
+    async fn legacy_loads_without_identifiers_are_always_applied() {
+        let addr = simulation(0).start();
+        stats_after(&addr, vec![load("", &[("Bot", "0")], BOT_SCRIPT)]).await;
+        let stats = stats_after(&addr, vec![load("", &[("Bot", "10 *")], BOT_SCRIPT)]).await;
+        assert!(matches!(stats.state, SimulationState::Idle));
+        assert!(stats.simulation_error.is_some());
     }
 
     #[actix::test]

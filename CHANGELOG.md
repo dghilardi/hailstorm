@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Preserve running bot sessions when the same simulation definition is delivered again.
+
 ## [0.5.2] 2026-10-11
 
 ### Added
