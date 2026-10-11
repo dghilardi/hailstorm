@@ -122,7 +122,7 @@ impl AgentCoreActor {
                             })
                             .collect(),
                         update_id: rand::rng().random(),
-                        timestamp: Some(SystemTime::now().into()),
+                        timestamp: Some(in_stats.timestamp.into()),
                         name: "".to_string(),
                         state: state as i32,
                         simulation_id: in_stats.simulation_id,
