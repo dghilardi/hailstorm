@@ -221,9 +221,7 @@ mod tests {
 
     #[test]
     fn bot_def_builder() {
-        let def = BotDef::default()
-            .model("test_bot")
-            .shape("1000 * sin(t)");
+        let def = BotDef::default().model("test_bot").shape("1000 * sin(t)");
         assert_eq!(def.model, "test_bot");
         assert_eq!(def.shape, "1000 * sin(t)");
     }

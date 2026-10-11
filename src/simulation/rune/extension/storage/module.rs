@@ -93,9 +93,11 @@ where
     let mut module = Module::with_crate_item("hailstorm", ["storage"])?;
 
     let registry = StorageRegistry::new(args.initializer);
-    module.function("get_bot_storage", move |name: &str, bot_id: u32| {
-        registry.get_bot_storage(name, bot_id)
-    }).build()?;
+    module
+        .function("get_bot_storage", move |name: &str, bot_id: u32| {
+            registry.get_bot_storage(name, bot_id)
+        })
+        .build()?;
 
     module.ty::<BotStorage>()?;
     module.associated_function("read", BotStorage::read)?;
@@ -120,10 +122,7 @@ mod test {
         .expect("Error initializing storage module with empty initializer");
     }
 
-    fn run_rune_script<Out>(
-        script: &str,
-        module: Module,
-    ) -> Result<Out, Box<dyn std::error::Error>>
+    fn run_rune_script<Out>(script: &str, module: Module) -> Result<Out, Box<dyn std::error::Error>>
     where
         Out: FromValue,
     {

@@ -49,7 +49,6 @@ impl BotRegistry {
         context.install(metrics::module(metrics_mgr_addr)?)?;
         let runtime = Arc::new(context.runtime()?);
 
-
         Ok(Self {
             bot_types: Default::default(),
             context,
@@ -72,8 +71,11 @@ impl BotRegistry {
         let mut diagnostics = Diagnostics::new();
 
         let mut sources = Sources::new();
-        sources.insert(Source::new("script", script)
-            .map_err(|e| LoadScriptError::InvalidScript(e.to_string()))?)
+        sources
+            .insert(
+                Source::new("script", script)
+                    .map_err(|e| LoadScriptError::InvalidScript(e.to_string()))?,
+            )
             .map_err(|e| LoadScriptError::InvalidScript(e.to_string()))?;
 
         let unit = rune::prepare(&mut sources)

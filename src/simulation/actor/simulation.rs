@@ -203,21 +203,13 @@ pub(crate) enum SimulationCommand {
         script: String,
     },
     /// Launch the loaded simulation at the specified start time.
-    LaunchSimulation {
-        start_ts: SystemTime,
-    },
+    LaunchSimulation { start_ts: SystemTime },
     /// Update the total number of agents participating in the simulation.
-    UpdateAgentsCount {
-        count: u32,
-    },
+    UpdateAgentsCount { count: u32 },
     /// Update the complete membership used to distribute bot counts.
-    UpdateAgents {
-        agent_ids: Vec<u32>,
-    },
+    UpdateAgents { agent_ids: Vec<u32> },
     /// Stop the simulation, optionally resetting all state.
-    StopSimulation {
-        reset: bool,
-    },
+    StopSimulation { reset: bool },
 }
 
 #[derive(Message, Default)]

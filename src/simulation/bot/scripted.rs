@@ -30,10 +30,7 @@ impl ScriptedBot {
 
     pub async fn run_random_action(&mut self) -> Result<(), VmError> {
         let action_hash = self.behaviour.random_action();
-        let _result: rune::Value = self
-            .vm
-            .async_call(action_hash, (&self.instance,))
-            .await?;
+        let _result: rune::Value = self.vm.async_call(action_hash, (&self.instance,)).await?;
         Ok(())
     }
 
@@ -53,10 +50,7 @@ impl ScriptedBot {
     pub async fn trigger_hook(&mut self, state: BotState) -> Result<(), VmError> {
         let maybe_hook = self.behaviour.hook_action(state);
         if let Some(hook) = maybe_hook {
-            let _result: rune::Value = self
-                .vm
-                .async_call(hook, (&self.instance,))
-                .await?;
+            let _result: rune::Value = self.vm.async_call(hook, (&self.instance,)).await?;
             Ok(())
         } else {
             Ok(())

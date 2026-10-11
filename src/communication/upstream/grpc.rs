@@ -176,7 +176,10 @@ impl Handler<EstablishConnection> for GrpcUpstreamAgentActor {
 fn truncated_exponential_backoff(attempt_n: u32, max_backoff: Duration) -> Duration {
     let base = 2u64.saturating_pow(attempt_n.min(30));
     let jitter = Duration::from_millis(rand::rng().random_range(0..1000));
-    min(Duration::from_secs(base).saturating_add(jitter), max_backoff)
+    min(
+        Duration::from_secs(base).saturating_add(jitter),
+        max_backoff,
+    )
 }
 
 impl Handler<SendAgentMessage> for GrpcUpstreamAgentActor {
