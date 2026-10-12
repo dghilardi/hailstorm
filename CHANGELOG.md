@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] 2026-10-12
+
 ### Fixed
 - Preserve running bot sessions when starting an already loaded simulation or reconciling delayed and duplicate heartbeats.
 
